@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<!-- saved from url=(0062)file:///Users/wkhalid/Downloads/gemini-code-1782775527329.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mode-Hopping vs. Broadband Locking Simulator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: #1e293b;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        h2 {
+            color: #38bdf8;
+            margin-top: 0;
+            text-align: center;
+        }
+        .instructions {
+            text-align: center;
+            color: #94a3b8;
+            margin-bottom: 20px;
+            font-size: 1.1em;
+            line-height: 1.5;
+        }
+        .canvas-wrapper {
+            background-color: #020617;
+            border-radius: 8px;
+            padding: 10px;
+            position: relative;
+            border: 1px solid #334155;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 300px;
+        }
+        .controls {
+            margin-top: 25px;
+            background: #334155;
+            padding: 20px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .toggle-group {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+        .toggle-btn {
+            background: #1e293b;
+            color: #f8fafc;
+            border: 2px solid #475569;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .toggle-btn.active {
+            background: #0ea5e9;
+            border-color: #38bdf8;
+            color: #fff;
+        }
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        label {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #bae6fd;
+            margin-bottom: 10px;
+        }
+        input[type=range] {
+            width: 80%;
+            cursor: pointer;
+        }
+        .status-box {
+            margin-top: 20px;
+            padding: 15px;
+            text-align: center;
+            font-size: 1.2em;
+            font-weight: bold;
+            border-radius: 6px;
+            background: #064e3b;
+            color: #34d399;
+            border: 1px solid #059669;
+            transition: background 0.3s, color 0.3s;
+        }
+        .status-box.chaos {
+            background: #7f1d1d;
+            color: #fca5a5;
+            border: 1px solid #dc2626;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Why Broadband Locking Prevents Mode-Hopping</h2>
+        <div class="instructions">
+            The closely packed grey lines represent the tiny cavity modes created by the 4-meter waveguide. 
+            <strong>1. Select your reflector type.</strong> <br> <strong>2. Drag the tuning slider</strong> (representing a temperature or current shift) to see how the laser behaves.
+        </div>
+
+        <div class="canvas-wrapper">
+            <canvas id="freqCanvas" width="850" height="300"></canvas>
+        </div>
+
+        <div id="statusBox" class="status-box">Status: Stably Locked (No Mode Hopping)</div>
+
+        <div class="controls">
+            <div class="toggle-group">
+                <button id="btnHighQ" class="toggle-btn active">High-Q Microresonator (Narrow)</button>
+                <button id="btnDBR" class="toggle-btn">Broadband DBR (Wide Net)</button>
+            </div>
+
+            <div class="slider-container">
+                <label for="driftSlider">Laser Tuning Drift (Temperature/Current change)</label>
+                <input type="range" id="driftSlider" min="-300" max="300" value="0">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('freqCanvas');
+        const ctx = canvas.getContext('2d');
+        const driftSlider = document.getElementById('driftSlider');
+        const btnHighQ = document.getElementById('btnHighQ');
+        const btnDBR = document.getElementById('btnDBR');
+        const statusBox = document.getElementById('statusBox');
+
+        let isHighQ = false; // Default to DBR setup
+        let centerDrift = 0;
+        let animationId;
+
+        // The "Comb" of fine cavity modes created by the 4-meter waveguide
+        const modeSpacing = 15; 
+        const modes = [];
+        for (let i = 0; i <= 850; i += modeSpacing) {
+            modes.push(i);
+        }
+
+        function drawScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Get current slider drift value
+            centerDrift = parseInt(driftSlider.value);
+            const canvasCenter = canvas.width / 2;
+            const targetLaserPos = canvasCenter + centerDrift;
+
+            // --- 1. Draw the densely packed cavity modes (The "Stations") ---
+            ctx.strokeStyle = "rgba(148, 163, 184, 0.3)";
+            ctx.lineWidth = 2;
+            modes.forEach(x => {
+                ctx.beginPath();
+                ctx.moveTo(x, 250);
+                ctx.lineTo(x, 150);
+                ctx.stroke();
+            });
+
+            // --- 2. Draw the Reflector Envelope (The "Target") ---
+            // In a real device, the reflector envelope stays stationary while the laser tries to tune,
+            // or the envelope shifts with the laser. For this simulation, we'll keep the envelope 
+            // stationary in the center to show what happens when the laser drifts away from it.
+            const envelopeCenter = canvasCenter;
+            const envelopeWidth = isHighQ ? 25 : 180; // High-Q is very narrow, DBR is very wide
+            
+            ctx.beginPath();
+            ctx.moveTo(0, 250);
+            for (let x = 0; x <= canvas.width; x++) {
+                // Bell curve math for the envelope visual
+                let height = Math.exp(-Math.pow(x - envelopeCenter, 2) / (2 * Math.pow(envelopeWidth, 2)));
+                let y = 250 - (height * 180);
+                ctx.lineTo(x, y);
+            }
+            
+            if (isHighQ) {
+                ctx.fillStyle = "rgba(239, 68, 68, 0.2)"; // Red for High-Q
+                ctx.strokeStyle = "#ef4444";
+            } else {
+                ctx.fillStyle = "rgba(56, 189, 248, 0.2)"; // Blue for Broadband DBR
+                ctx.strokeStyle = "#38bdf8";
+            }
+            ctx.lineTo(canvas.width, 250);
+            ctx.fill();
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Label the envelope
+            ctx.fillStyle = isHighQ ? "#fca5a5" : "#bae6fd";
+            ctx.font = "16px Arial";
+            ctx.fillText(isHighQ ? "Narrow High-Q Reflection" : "Broadband DBR Reflection", envelopeCenter - 80, 50);
+
+            // --- 3. Determine Laser Lock Status (Mode Hopping Logic) ---
+            let laserActiveX = targetLaserPos;
+            let locked = false;
+
+            // Find the reflection strength at the laser's current drift position
+            let currentReflectionStrength = Math.exp(-Math.pow(targetLaserPos - envelopeCenter, 2) / (2 * Math.pow(envelopeWidth, 2)));
+
+            if (currentReflectionStrength > 0.4) {
+                // The laser is within the strong part of the reflector's net
+                locked = true;
+                statusBox.className = "status-box";
+                statusBox.textContent = "Status: Stably Locked (No Mode Hopping)";
+                
+                // Snap to the nearest mode within the envelope (Stable operation)
+                let closestMode = modes.reduce((prev, curr) => Math.abs(curr - targetLaserPos) < Math.abs(prev - targetLaserPos) ? curr : prev);
+                laserActiveX = closestMode;
+                
+            } else {
+                // The laser has drifted outside the reflection envelope!
+                locked = false;
+                statusBox.className = "status-box chaos";
+                statusBox.textContent = "Status: LOST LOCK! Mode-Hopping (Chaos)";
+                
+                // Simulate frantic hopping by picking random adjacent modes
+                let randomJump = (Math.random() > 0.5 ? 1 : -1) * modeSpacing * Math.floor(Math.random() * 3);
+                laserActiveX = targetLaserPos + randomJump;
+            }
+
+            // --- 4. Draw the Laser Frequency (The "Needle") ---
+            ctx.beginPath();
+            ctx.moveTo(laserActiveX, 260);
+            ctx.lineTo(laserActiveX, 40);
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = locked ? "#10b981" : "#f59e0b"; // Green if locked, Yellow/chaotic if hopping
+            ctx.stroke();
+
+            // Draw laser glowing dot
+            ctx.beginPath();
+            ctx.arc(laserActiveX, 260, 8, 0, Math.PI * 2);
+            ctx.fillStyle = locked ? "#34d399" : "#fbbf24";
+            ctx.fill();
+
+            // Add text for laser
+            ctx.fillStyle = locked ? "#34d399" : "#fbbf24";
+            ctx.fillText("Laser Frequency", laserActiveX + 10, 80);
+
+            animationId = requestAnimationFrame(drawScene);
+        }
+
+        // Button Listeners
+        btnHighQ.addEventListener('click', () => {
+            isHighQ = true;
+            btnHighQ.classList.add('active');
+            btnDBR.classList.remove('active');
+            driftSlider.value = 0; // Reset slider on change
+        });
+
+        btnDBR.addEventListener('click', () => {
+            isHighQ = false;
+            btnDBR.classList.add('active');
+            btnHighQ.classList.remove('active');
+            driftSlider.value = 0; // Reset slider on change
+        });
+
+        // Start animation loop
+        drawScene();
+    </script>
+
+</body></html>

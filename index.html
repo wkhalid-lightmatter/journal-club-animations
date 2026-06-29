@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>External Feedback & Coherence Regimes — Dong et al., Optica 2025</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0f172a;
+    color: #f1f5f9;
+    min-height: 100vh;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .page { max-width: 860px; width: 100%; }
+
+  h1 { font-size: 1.35rem; font-weight: 700; color: #38bdf8; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #64748b; margin-bottom: 20px; }
+
+  /* Device pills */
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  .pill {
+    padding: 6px 16px; border-radius: 999px; border: 1.5px solid #334155;
+    background: #1e293b; color: #94a3b8; cursor: pointer;
+    font-size: 0.85rem; font-weight: 600; transition: all 0.15s;
+  }
+  .pill:hover { border-color: #38bdf8; color: #f1f5f9; }
+  .pill.active { background: #0ea5e9; border-color: #38bdf8; color: #fff; }
+  .pill-label { font-size: 0.78rem; color: #475569; margin-left: 4px; }
+
+  /* Play button */
+  .btn-play {
+    margin-left: auto; padding: 7px 20px; border-radius: 6px; border: none;
+    background: #0ea5e9; color: #fff; font-size: 0.88rem; font-weight: 700;
+    cursor: pointer; transition: background 0.15s; min-width: 120px;
+  }
+  .btn-play:hover { background: #38bdf8; }
+  .btn-play.paused { background: #334155; }
+
+  /* Main animation box */
+  .anim-box {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 16px;
+  }
+  svg.main { display: block; width: 100%; }
+
+  /* Slider area */
+  .slider-row {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+  }
+  .slider-row label { font-size: 0.82rem; color: #94a3b8; white-space: nowrap; }
+  .slider-row input[type=range] { flex: 1; accent-color: #0ea5e9; cursor: pointer; }
+  .slider-val { font-size: 0.88rem; font-family: monospace; min-width: 64px; text-align: right; }
+
+  /* Regime badge */
+  .regime-badge {
+    border-radius: 8px; padding: 10px 16px; margin-bottom: 14px;
+    border: 1.5px solid; font-size: 0.88rem; line-height: 1.5;
+    transition: background 0.3s, border-color 0.3s;
+  }
+  .regime-badge strong { display: block; font-size: 1rem; margin-bottom: 3px; }
+
+  /* Stats grid */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+  .stat-box { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 10px 12px; }
+  .stat-box .val { font-size: 1.3rem; font-weight: 700; margin-bottom: 2px; }
+  .stat-box .lbl { font-size: 0.73rem; color: #64748b; }
+
+  /* Callout */
+  .callout {
+    border-left: 3px solid; border-radius: 0 6px 6px 0;
+    padding: 10px 14px; font-size: 0.82rem; line-height: 1.55;
+    margin-bottom: 12px; transition: all 0.3s;
+  }
+  .callout strong { display: block; margin-bottom: 3px; }
+
+  /* Boundary table */
+  .boundary-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-bottom: 16px; }
+  .boundary-table th { text-align: left; color: #64748b; font-weight: 600; padding: 4px 8px; }
+  .boundary-table td { padding: 5px 8px; border-top: 1px solid #1e293b; }
+
+  /* Footer note */
+  .footer { font-size: 0.75rem; color: #475569; margin-top: 8px; text-align: center; }
+  sup { font-size: 0.65em; vertical-align: super; }
+  sub { font-size: 0.65em; vertical-align: sub; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>External Optical Feedback &amp; Coherence Regimes</h1>
+  <p class="subtitle">Dong et al., <em>Optica</em> 12(8), 1171 (2025) &nbsp;·&nbsp; Fig. 3 &nbsp;·&nbsp; drag slider or press Play</p>
+
+  <div class="pills">
+    <button class="pill" id="pill-dfb" onclick="selectDevice('dfb')">QW DFB</button>
+    <button class="pill" id="pill-edbr" onclick="selectDevice('edbr')">E-DBR</button>
+    <button class="pill active" id="pill-ecl" onclick="selectDevice('ecl')">4 m ECL</button>
+    <span class="pill-label" id="pill-label">4 m Si₃N₄ spiral + DBR · η₀ ≈ −34 dB</span>
+    <button class="btn-play" id="btn-play" onclick="togglePlay()">▶ Play</button>
+  </div>
+
+  <div class="anim-box">
+    <svg id="main-svg" class="main" viewBox="0 0 820 410" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <div class="slider-row">
+    <label>Secondary feedback η<sub>F</sub></label>
+    <input type="range" id="slider" min="-80" max="2" step="0.5" value="-55"
+      oninput="onSlider(this.value)">
+    <span class="slider-val" id="slider-val">−55.0 dB</span>
+  </div>
+
+  <div class="regime-badge" id="regime-badge">
+    <strong id="regime-title">Regime I–III — Stable sub-Hz</strong>
+    <span id="regime-desc">DBR-locked; stable to −8.1 dB (strongest tested — true collapse boundary unknown)</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat-box">
+      <div class="val" id="stat-lw">0.45 Hz</div>
+      <div class="lbl">Δν Lorentzian linewidth</div>
+    </div>
+    <div class="stat-box">
+      <div class="val" id="stat-nrf">51.3 dB</div>
+      <div class="lbl">NRF (noise reduction factor)</div>
+    </div>
+    <div class="stat-box">
+      <div class="val" id="stat-cc">−8.1 dB</div>
+      <div class="lbl">η<sub>F,crit</sub> (or exp. limit)</div>
+    </div>
+  </div>
+
+  <div class="callout" id="callout" style="border-color:#22c55e; background:#052e16; color:#86efac;">
+    <strong id="callout-title">Paper result — isolator-free</strong>
+    <span id="callout-body">Stable sub-Hz (0.45 Hz) to η<sub>F</sub> = −8.1 dB — strongest downstream feedback tested, limited by chip-to-fiber coupling losses. True η<sub>F,crit</sub> unknown.</span>
+  </div>
+
+  <table class="boundary-table">
+    <thead><tr><th>Boundary</th><th>QW DFB</th><th>E-DBR</th><th>4 m ECL</th></tr></thead>
+    <tbody>
+      <tr><td>I → II</td><td>−65 dB</td><td>−68 dB <em>(3 dB delay)</em></td><td>not distinct</td></tr>
+      <tr><td>II → III</td><td>−31 dB</td><td>−34 dB <em>(3 dB delay)</em></td><td>not distinct</td></tr>
+      <tr><td>Collapse η<sub>F,crit</sub></td><td style="color:#f87171">−24 dB (measured)</td><td style="color:#fbbf24">&lt; −21 dB (not reached)</td><td style="color:#4ade80">−8.1 dB tested, stable</td></tr>
+      <tr><td>Best Δν</td><td>3 Hz</td><td>9.5 Hz</td><td><strong>0.45 Hz</strong></td></tr>
+      <tr><td>Free-running Δν</td><td>~76 kHz</td><td>12 kHz</td><td>0.45 Hz (already locked)</td></tr>
+    </tbody>
+  </table>
+
+  <p class="footer">
+    Linewidth from measured frequency noise (OEWave OE4000, self-heterodyne). Δν = π · S<sub>ν</sub><sup>0</sup>. &nbsp;
+    Regime boundaries from §4 / Fig. 3. E-DBR collapse never observed (exp. limited to −21 dB). ECL tested to −8.1 dB.
+  </p>
+</div>
+
+<script>
+// ── Device data (paper §4, Fig. 3) ────────────────────────────────────────
+const DEVICES = {
+  dfb: {
+    label: 'QW DFB', fig: 'Fig. 3(c,d)',
+    pillLabel: 'α_H = 2.3 · homemade QW DFB on silicon · 2× I_th',
+    dv_free: 76e3, dv_opt: 3,
+    onsetI: -65, onsetII: -31, CC: -24, CCknown: true, expLimit: -24,
+    NRF: 43.8, alphaH: 2.3,
+  },
+  edbr: {
+    label: 'E-DBR', fig: 'Fig. 3(e,f)',
+    pillLabel: '20 mm grating · κL = 1.75 · 3× I_th · regime onsets 3 dB later than DFB',
+    dv_free: 12e3, dv_opt: 9.5,
+    onsetI: -68, onsetII: -34, CC: -21, CCknown: false, expLimit: -21,
+    NRF: 31.1, alphaH: 2.3,
+  },
+  ecl: {
+    label: '4 m ECL', fig: 'Fig. 3(g,h)',
+    pillLabel: '4 m Si₃N₄ spiral + DBR · η₀ ≈ −34 dB · κL = 1',
+    dv_free: 0.45, dv_opt: 0.45,
+    onsetI: -80, onsetII: -80, CC: -8.1, CCknown: false, expLimit: -8.1,
+    NRF: 51.3, alphaH: 2.3,
+  },
+};
+
+// ── Regime logic ──────────────────────────────────────────────────────────
+const REGIME_COLORS = {
+  green:  '#22c55e', blue: '#38bdf8', yellow: '#fbbf24',
+  orange: '#f97316', red: '#f87171',
+};
+
+function getRegime(eta, key) {
+  const d = DEVICES[key];
+  if (key === 'ecl') {
+    if (eta <= d.CC)
+      return { roman:'I–III', name:'Stable sub-Hz', cat:'green',
+        desc:'DBR-locked; stable to −8.1 dB (strongest tested — true collapse boundary unknown). Fig. 3(g,h).',
+        dv: d.dv_opt, nrf: d.NRF };
+    const ex = eta - d.CC;
+    return { roman:'IV*', name:'Extrapolated collapse', cat:'red',
+      desc:'Beyond experiment limit. True η_F,crit unknown; paper could not test further.',
+      dv: d.dv_opt * Math.pow(10, ex * 0.55 + 2.5), nrf: 0 };
+  }
+  if (key === 'edbr') {
+    if (eta < d.onsetI)
+      return { roman:'I', name:'Free-running', cat:'green',
+        desc:'Feedback too weak; free-running Δν = 12 kHz (7.7 dB narrower than bare DFB due to extended τ_ph).',
+        dv: d.dv_free, nrf: 0 };
+    if (eta < d.onsetII) {
+      const t = (eta - d.onsetI) / (d.onsetII - d.onsetI);
+      const nrf = t * d.NRF * 0.85;
+      return { roman:'II', name:'ECL locking', cat:'blue',
+        desc:'Onset delayed 3 dB vs. bare DFB — extended photon lifetime raises collapse threshold (§4).',
+        dv: d.dv_free / Math.pow(10, nrf / 10), nrf };
+    }
+    return { roman:'III', name:'Optimal narrowing', cat:'yellow',
+      desc:'9.5 Hz achieved (NRF 31.1 dB). Experiment limited to −21 dB — collapse never reached. True η_F,crit unknown.',
+      dv: d.dv_opt, nrf: d.NRF };
+  }
+  // DFB — full route to chaos measured
+  if (eta < d.onsetI)
+    return { roman:'I', name:'Free-running', cat:'green',
+      desc:'Secondary feedback too weak to perturb the laser; free-running Δν ≈ 76 kHz.',
+      dv: d.dv_free, nrf: 0 };
+  if (eta < d.onsetII) {
+    const t = (eta - d.onsetI) / (d.onsetII - d.onsetI);
+    const nrf = t * d.NRF * 0.85;
+    return { roman:'II', name:'ECL locking', cat:'blue',
+      desc:'Laser locks to delayed feedback; Lorentzian linewidth begins to narrow with η_F.',
+      dv: d.dv_free / Math.pow(10, nrf / 10), nrf };
+  }
+  if (eta < d.CC)
+    return { roman:'III', name:'Optimal narrowing', cat:'yellow',
+      desc:'Phase-independent maximum coherence: 3 Hz (NRF 43.8 dB), limited by collapse at −24 dB (Fig. 3c,d).',
+      dv: d.dv_opt, nrf: d.NRF };
+  const ex = eta - d.CC;
+  return { roman:'IV', name:'Coherence collapse', cat:'orange',
+    desc:'η_F > −24 dB: amplitude/phase fluctuations couple via α_H → route to chaos. Lorentzian line collapses. (Fig. 3c)',
+    dv: d.dv_opt * Math.pow(10, ex * 0.55 + 2.5), nrf: Math.max(0, d.NRF - ex * 14) };
+}
+
+function fmtHz(hz) {
+  if (hz < 1)    return (hz * 1000).toFixed(0) + ' mHz';
+  if (hz < 1e3)  return hz < 10 ? hz.toFixed(2) + ' Hz' : hz.toFixed(0) + ' Hz';
+  if (hz < 1e6)  return (hz / 1e3).toFixed(1) + ' kHz';
+  return (hz / 1e6).toFixed(0) + ' kHz';
+}
+
+// ── SVG rendering ─────────────────────────────────────────────────────────
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
+function text(content, attrs) {
+  const e = el('text', attrs);
+  e.textContent = content;
+  return e;
+}
+function line(x1, y1, x2, y2, attrs) {
+  return el('line', { x1, y1, x2, y2, ...attrs });
+}
+function rect(x, y, w, h, attrs) {
+  return el('rect', { x, y, width: w, height: h, ...attrs });
+}
+function poly(points, attrs) {
+  return el('polyline', { points, ...attrs });
+}
+function circle(cx, cy, r, attrs) {
+  return el('circle', { cx, cy, r, ...attrs });
+}
+
+// ── Layout constants ──────────────────────────────────────────────────────
+const W = 820, H = 410;
+const LX = 54; // left x padding for all plots
+const PW = W - LX - 18;
+
+const TRACK_Y = 8,  TRACK_H = 26;
+const SPEC_Y  = 44, SPEC_H  = 170;
+const NOISE_Y = 224, NOISE_H = 92;
+const WAVE_Y  = 322, WAVE_H  = 80;
+
+// ── Build static SVG skeleton ─────────────────────────────────────────────
+function buildSVG() {
+  const svg = document.getElementById('main-svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  // Plot backgrounds
+  for (const [y, h, label] of [
+    [SPEC_Y,  SPEC_H,  ''],
+    [NOISE_Y, NOISE_H, ''],
+    [WAVE_Y,  WAVE_H,  ''],
+  ]) {
+    svg.appendChild(rect(LX, y, PW, h,
+      { fill:'#0f172a', stroke:'#334155', 'stroke-width':1, rx:4 }));
+  }
+
+  // Grid lines (horizontal)
+  for (const [y, h, fracs] of [
+    [SPEC_Y,  SPEC_H,  [0.25, 0.5, 0.75]],
+    [NOISE_Y, NOISE_H, [0.33, 0.67]],
+    [WAVE_Y,  WAVE_H,  [0.5]],
+  ]) {
+    for (const f of fracs) {
+      const gy = y + f * h;
+      svg.appendChild(line(LX, gy, LX + PW, gy,
+        { stroke:'#1e293b', 'stroke-width':0.5, 'stroke-dasharray':'3,4' }));
+    }
+  }
+}
+
+// ── Dynamic drawing ───────────────────────────────────────────────────────
+let lastDevice = null, lastEta = null;
+const DYNAMIC_ID = 'dyn-layer';
+
+function lorentz(df, dv) {
+  const h = dv / 2;
+  return (h / Math.PI) / (df * df + h * h);
+}
+
+function renderAll(eta, device) {
+  if (eta === lastEta && device === lastDevice) return;
+  lastEta = eta; lastDevice = device;
+
+  const d = DEVICES[device];
+  const regime = getRegime(eta, device);
+  const color = REGIME_COLORS[regime.cat];
+  const dv = regime.dv;
+  const S0 = dv / Math.PI;
+
+  const svg = document.getElementById('main-svg');
+  let dyn = document.getElementById(DYNAMIC_ID);
+  if (dyn) dyn.remove();
+  dyn = el('g', { id: DYNAMIC_ID });
+  svg.appendChild(dyn);
+
+  const etaMin = -80, etaMax = 2;
+  const toX = v => LX + ((Math.max(etaMin, Math.min(etaMax, v)) - etaMin) / (etaMax - etaMin)) * PW;
+
+  // ── 1. Regime track ──────────────────────────────────────────────────
+  const zones = device === 'ecl'
+    ? [[etaMin, d.CC, REGIME_COLORS.green, 'I–III'],
+       [d.CC, etaMax, REGIME_COLORS.red, 'IV?']]
+    : device === 'edbr'
+    ? [[etaMin, d.onsetI,  REGIME_COLORS.green,  'I'],
+       [d.onsetI, d.onsetII, REGIME_COLORS.blue, 'II'],
+       [d.onsetII, d.expLimit, REGIME_COLORS.yellow,'III (exp. limit −21 dB)'],
+       [d.expLimit, etaMax, '#334155', '']]
+    : [[etaMin, d.onsetI,   REGIME_COLORS.green,  'I'],
+       [d.onsetI, d.onsetII, REGIME_COLORS.blue,  'II'],
+       [d.onsetII, d.CC,     REGIME_COLORS.yellow,'III'],
+       [d.CC, etaMax,        REGIME_COLORS.orange, 'IV']];
+
+  for (const [from, to, c, lbl] of zones) {
+    const x1 = toX(from), x2 = toX(to), w = Math.max(0, x2 - x1);
+    if (w < 1) continue;
+    dyn.appendChild(rect(x1, TRACK_Y + 8, w, TRACK_H - 8,
+      { fill: c + '30', stroke: c + '70', 'stroke-width':0.6 }));
+    if (w > 40 && lbl) {
+      const t = text(lbl, { x: x1 + w / 2, y: TRACK_Y + 21,
+        'font-size':9, 'text-anchor':'middle', fill: c, 'font-weight':600 });
+      dyn.appendChild(t);
+    }
+    // boundary ticks
+    if (from > etaMin) {
+      const tx = toX(from);
+      dyn.appendChild(line(tx, TRACK_Y + 4, tx, TRACK_Y + TRACK_H + 2,
+        { stroke:'#475569', 'stroke-width':0.8 }));
+      const bdText = text(from + ' dB', {
+        x: tx, y: TRACK_Y + TRACK_H + 11,
+        'font-size': 8, 'text-anchor':'middle', fill:'#64748b',
+      });
+      dyn.appendChild(bdText);
+    }
+  }
+  // slider dot
+  const px = toX(eta);
+  dyn.appendChild(line(px, TRACK_Y + 4, px, TRACK_Y + TRACK_H + 2,
+    { stroke: '#f1f5f9', 'stroke-width':2.5, 'stroke-linecap':'round' }));
+  dyn.appendChild(circle(px, TRACK_Y + 17, 6,
+    { fill: color, stroke:'#f1f5f9', 'stroke-width':1.5 }));
+
+  // plot label top-left
+  dyn.appendChild(text(`η_F = ${eta.toFixed(1)} dB`, {
+    x: LX + 6, y: TRACK_Y + 5, 'font-size': 9, fill:'#64748b',
+  }));
+
+  // ── 2. Lorentzian spectrum ────────────────────────────────────────────
+  const span = dv < 5 ? Math.max(4, dv * 12) : dv < 5000 ? dv * 7 : dv * 5;
+  const sPY = SPEC_Y, sPH = SPEC_H;
+  const sPY2 = sPY + 28, sPH2 = sPH - 46;  // inner plot area
+
+  // plot label
+  dyn.appendChild(text('Optical spectrum — Lorentzian lineshape', {
+    x: LX + 8, y: sPY + 14, 'font-size': 10, fill: color, 'font-weight': 700,
+  }));
+
+  // curve
+  const specPts = [];
+  for (let i = 0; i <= 160; i++) {
+    const df = -span + (2 * span * i) / 160;
+    const L = lorentz(df, dv) / lorentz(0, dv);
+    const sx = LX + ((df + span) / (2 * span)) * PW;
+    const sy = sPY2 + sPH2 - L * sPH2 * 0.90;
+    specPts.push(`${sx.toFixed(1)},${sy.toFixed(1)}`);
+  }
+  dyn.appendChild(poly(specPts.join(' '),
+    { fill:'none', stroke: color, 'stroke-width':2.5,
+      'stroke-linejoin':'round', 'stroke-linecap':'round' }));
+
+  // FWHM bracket
+  const cx = LX + PW / 2;
+  const fwhmPx = Math.min(PW * 0.46, ((dv / 2) / span) * PW * 0.5);
+  const bY = sPY2 + sPH2 * 0.14;
+  for (const [x1, x2] of [[cx - fwhmPx, cx - fwhmPx], [cx + fwhmPx, cx + fwhmPx]]) {
+    dyn.appendChild(line(x1, bY + 14, x1, bY + 24,
+      { stroke:'#fbbf24', 'stroke-width':2 }));
+  }
+  dyn.appendChild(line(cx - fwhmPx, bY + 19, cx + fwhmPx, bY + 19,
+    { stroke:'#fbbf24', 'stroke-width':2 }));
+  dyn.appendChild(text(`FWHM = Δν = ${fmtHz(dv)}`, {
+    x: cx, y: bY + 35,
+    'font-size': 11, 'text-anchor':'middle', fill:'#fbbf24', 'font-weight':700,
+  }));
+
+  // axis labels
+  dyn.appendChild(text('frequency offset δν →', {
+    x: LX + PW / 2, y: sPY + sPH - 5,
+    'font-size': 9, 'text-anchor':'middle', fill:'#475569',
+  }));
+  dyn.appendChild(text('power', {
+    x: 12, y: sPY2 + sPH2 / 2,
+    'font-size': 9, 'text-anchor':'middle', fill:'#475569',
+    transform: `rotate(-90,12,${sPY2 + sPH2 / 2})`,
+  }));
+
+  // link annotation
+  dyn.appendChild(text('Δν = π · S_ν⁰', {
+    x: LX + PW - 6, y: sPY + sPH - 5,
+    'font-size': 9, 'text-anchor':'end', fill:'#475569',
+  }));
+
+  // arrow linking spectrum to noise
+  const arrowX = LX + PW * 0.72;
+  dyn.appendChild(line(arrowX, sPY + sPH, arrowX, NOISE_Y,
+    { stroke:'#334155', 'stroke-width':1.2, 'stroke-dasharray':'4,3',
+      'marker-end':'url(#arr)' }));
+  // define arrow marker once
+  if (!document.getElementById('arr')) {
+    const defs = el('defs', {});
+    const mk = el('marker', { id:'arr', markerWidth:6, markerHeight:6,
+      refX:3, refY:3, orient:'auto' });
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d','M0,0 L6,3 L0,6 Z');
+    path.setAttribute('fill','#334155');
+    mk.appendChild(path);
+    defs.appendChild(mk);
+    svg.insertBefore(defs, svg.firstChild);
+  }
+
+  // ── 3. Frequency noise ────────────────────────────────────────────────
+  const nPY = NOISE_Y, nPH = NOISE_H;
+  const nPY2 = nPY + 18, nPH2 = nPH - 32;
+
+  dyn.appendChild(text('Frequency noise S_ν(f)  —  flat floor → Δν = π · S_ν⁰', {
+    x: LX + 8, y: nPY + 12, 'font-size': 9, fill:'#94a3b8', 'font-weight':600,
+  }));
+
+  const logS0 = Math.log10(Math.max(S0, 1e-12));
+  const logSMin = logS0 - 2.8, logSMax = logS0 + 2.8;
+  const noisePts = [];
+  for (let i = 0; i <= 80; i++) {
+    const logf = 1 + (i / 80) * 6;
+    const f = Math.pow(10, logf);
+    let Snu = S0 * (1 + 1e5 / f);
+    if (regime.roman === 'IV' || regime.roman === 'IV*') {
+      Snu *= 1 + 5 * Math.pow(10, (eta - d.CC) * 0.3) * (f / 1e6);
+    }
+    const logS = Math.log10(Math.max(Snu, 1e-14));
+    const nx = LX + (i / 80) * PW;
+    const ny = nPY2 + nPH2 - ((logS - logSMin) / (logSMax - logSMin)) * nPH2;
+    noisePts.push(`${nx.toFixed(1)},${Math.max(nPY2, Math.min(nPY2 + nPH2, ny)).toFixed(1)}`);
+  }
+  dyn.appendChild(poly(noisePts.join(' '),
+    { fill:'none', stroke: color, 'stroke-width':2 }));
+
+  // floor dashed line
+  const floorY = nPY2 + nPH2 - ((logS0 - logSMin) / (logSMax - logSMin)) * nPH2;
+  if (floorY >= nPY2 && floorY <= nPY2 + nPH2) {
+    dyn.appendChild(line(LX, floorY, LX + PW, floorY,
+      { stroke:'#fbbf24', 'stroke-width':1.2, 'stroke-dasharray':'6,4' }));
+    dyn.appendChild(text(`S_ν⁰ = Δν/π`, {
+      x: LX + PW - 6, y: floorY - 4,
+      'font-size':8, 'text-anchor':'end', fill:'#fbbf24',
+    }));
+  }
+
+  // x axis labels
+  for (const [lbl, pos] of [['10 Hz',0],['1 kHz',0.33],['100 kHz',0.56],['10 MHz',0.83],['100 MHz',1]]) {
+    dyn.appendChild(text(lbl, {
+      x: LX + pos * PW, y: nPY + nPH - 4,
+      'font-size': 8, 'text-anchor':'middle', fill:'#475569',
+    }));
+  }
+
+  // ── 4. Output intensity ───────────────────────────────────────────────
+  const wPY = WAVE_Y, wPH = WAVE_H;
+  const wPY2 = wPY + 14, wPH2 = wPH - 26;
+
+  const noiseAmp = (regime.roman === 'I' || regime.roman === 'I–III') ? 0.03
+    : regime.roman === 'II' ? 0.022
+    : regime.roman === 'III' ? 0.009
+    : Math.min(0.40, 0.07 + (eta - d.CC) * 0.04);
+
+  const fk = [0.9,1.4,2.1,3.0,4.2,5.7,7.3];
+  const ph = [0.0,1.2,2.4,0.6,1.9,3.1,0.9];
+  const seed = (eta + 80) / 82;
+  const wavePts = [];
+  for (let i = 0; i <= 200; i++) {
+    const t = i / 200;
+    let I = 1.0;
+    for (let k = 0; k < fk.length; k++) {
+      I += (noiseAmp / fk.length) * Math.sin(2 * Math.PI * fk[k] * t * 3.8 + ph[k] + seed);
+    }
+    if (regime.roman === 'IV' || regime.roman === 'IV*') {
+      const amp = Math.min(0.32, (eta - d.CC) * 0.04);
+      I += amp * Math.sin(2 * Math.PI * 4.2 * t * 4 + seed * 2);
+      I += amp * 0.6 * Math.sin(2 * Math.PI * 6.5 * t * 4 + seed * 1.5);
+    }
+    const wx = LX + t * PW;
+    const Imin = 0.4, Imax = 1.6;
+    const wy = wPY2 + wPH2 / 2 - ((I - 1) / ((Imax - Imin) / 2)) * wPH2 * 0.42;
+    wavePts.push(`${wx.toFixed(1)},${Math.max(wPY2, Math.min(wPY2 + wPH2, wy)).toFixed(1)}`);
+  }
+  dyn.appendChild(poly(wavePts.join(' '),
+    { fill:'none', stroke: color, 'stroke-width':1.8 }));
+
+  dyn.appendChild(text(`I(t)  —  Regime ${regime.roman} · ${regime.name}`, {
+    x: LX + 8, y: wPY + 11, 'font-size': 9, fill:'#94a3b8', 'font-weight':600,
+  }));
+  dyn.appendChild(text('time →', {
+    x: LX + PW / 2, y: wPY + wPH - 4,
+    'font-size': 8, 'text-anchor':'middle', fill:'#475569',
+  }));
+
+  // ── Update UI panels ──────────────────────────────────────────────────
+  const badge = document.getElementById('regime-badge');
+  badge.style.borderColor = color;
+  badge.style.background = color + '15';
+  badge.style.color = '#f1f5f9';
+  document.getElementById('regime-title').textContent =
+    `Regime ${regime.roman} — ${regime.name}`;
+  document.getElementById('regime-desc').textContent = regime.desc;
+
+  document.getElementById('stat-lw').style.color = color;
+  document.getElementById('stat-lw').textContent = fmtHz(dv);
+  document.getElementById('stat-nrf').textContent =
+    regime.nrf > 0 ? regime.nrf.toFixed(1) + ' dB' : '—';
+  document.getElementById('stat-cc').textContent =
+    DEVICES[device].CCknown ? `${DEVICES[device].CC} dB` : `${DEVICES[device].expLimit} dB (exp. limit)`;
+
+  // callout
+  const cl = document.getElementById('callout');
+  const ct = document.getElementById('callout-title');
+  const cb = document.getElementById('callout-body');
+  if (regime.roman === 'IV') {
+    cl.style.borderColor = '#f97316'; cl.style.background = '#431407'; cl.style.color = '#fdba74';
+    ct.textContent = 'Coherence collapse (Regime IV)';
+    cb.innerHTML = `η<sub>F</sub> > −24 dB: route to chaos. α<sub>H</sub> = 2.3 couples intensity fluctuations to phase. Extended τ<sub>in,eff</sub> from the 4 m spiral raises η<sub>F,crit</sub> vs. the bare DFB. (Fig. 3c)`;
+  } else if (regime.roman === 'IV*') {
+    cl.style.borderColor = '#fbbf24'; cl.style.background = '#422006'; cl.style.color = '#fde68a';
+    ct.textContent = 'Beyond experiment range';
+    cb.innerHTML = `The paper only tested to −8.1 dB (chip-to-fiber coupling limit). This region is extrapolated — collapse boundary unknown.`;
+  } else if (regime.roman === 'III' && device === 'dfb') {
+    cl.style.borderColor = '#fbbf24'; cl.style.background = '#1c1917'; cl.style.color = '#fde68a';
+    ct.textContent = 'Optimal narrowing (Regime III)';
+    cb.innerHTML = `3 Hz achieved (NRF 43.8 dB), limited by coherence collapse at η<sub>F,crit</sub> = −24 dB. (Fig. 3c,d)`;
+  } else if (regime.roman === 'III' && device === 'edbr') {
+    cl.style.borderColor = '#fbbf24'; cl.style.background = '#1c1917'; cl.style.color = '#fde68a';
+    ct.textContent = 'E-DBR — experiment limit';
+    cb.innerHTML = `9.5 Hz achieved (NRF 31.1 dB). Regime onsets 3 dB later than bare DFB. Collapse <em>never observed</em> — experiment limited to −21 dB by chip-to-fiber coupling losses. (Fig. 3e,f)`;
+  } else if (device === 'ecl') {
+    cl.style.borderColor = '#22c55e'; cl.style.background = '#052e16'; cl.style.color = '#86efac';
+    ct.textContent = 'Paper result — isolator-free';
+    cb.innerHTML = `Stable sub-Hz (0.45 Hz) to η<sub>F</sub> = −8.1 dB — strongest downstream feedback tested, limited by chip-to-fiber coupling losses. True η<sub>F,crit</sub> may be higher. (Fig. 3g,h)`;
+  } else {
+    cl.style.borderColor = '#334155'; cl.style.background = '#0f172a'; cl.style.color = '#94a3b8';
+    ct.textContent = `${DEVICES[device].label} · ${DEVICES[device].fig}`;
+    cb.textContent = regime.desc;
+  }
+}
+
+// ── State & interaction ────────────────────────────────────────────────────
+let eta = -55;
+let device = 'ecl';
+let playing = false;
+let animDir = 1;
+let animId = null;
+
+function selectDevice(key) {
+  device = key;
+  ['dfb','edbr','ecl'].forEach(k =>
+    document.getElementById('pill-' + k).classList.toggle('active', k === key));
+  document.getElementById('pill-label').textContent = DEVICES[key].pillLabel;
+  document.getElementById('stat-cc').textContent =
+    DEVICES[key].CCknown ? `${DEVICES[key].CC} dB` : `${DEVICES[key].expLimit} dB (exp. limit)`;
+  renderAll(eta, device);
+}
+
+function onSlider(val) {
+  if (playing) stopPlay();
+  eta = parseFloat(val);
+  document.getElementById('slider-val').textContent = eta.toFixed(1) + ' dB';
+  renderAll(eta, device);
+}
+
+function togglePlay() {
+  playing ? stopPlay() : startPlay();
+}
+
+function startPlay() {
+  playing = true;
+  document.getElementById('btn-play').textContent = '⏸ Pause';
+  document.getElementById('btn-play').classList.remove('paused');
+  animDir = 1;
+  animId = setInterval(() => {
+    eta += animDir * 0.7;
+    if (eta >= 1.5) { eta = 1.5; animDir = -1; }
+    if (eta <= -79) { eta = -79; animDir = 1; }
+    document.getElementById('slider').value = eta;
+    document.getElementById('slider-val').textContent = eta.toFixed(1) + ' dB';
+    renderAll(eta, device);
+  }, 45);
+}
+
+function stopPlay() {
+  playing = false;
+  clearInterval(animId);
+  document.getElementById('btn-play').textContent = '▶ Play';
+  document.getElementById('btn-play').classList.add('paused');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+buildSVG();
+selectDevice('ecl');
+renderAll(eta, device);
+</script>
+</body>
+</html>
