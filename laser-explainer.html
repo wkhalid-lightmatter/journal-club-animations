@@ -111,7 +111,7 @@
 <body>
 <div class="page">
   <h1>Building a Sub-Hz Laser: From Diode to External Cavity</h1>
-  <p class="paper-ref">Based on Dong et al., <em>Optica</em> 12(8), 1171 (2025) — steps 3–5 &amp; 8 are interactive · step 6 = animated Fig. 2(a)</p>
+  <p class="paper-ref">Based on Dong et al., <em>Optica</em> 12(8), 1171 (2025) — steps 3–5 &amp; 8 are interactive (drag the sliders)</p>
 
   <div class="step-dots" id="step-dots"></div>
 
@@ -844,191 +844,200 @@ const STEPS = [
     }
   },
 
-  // ===== STEP 6 — Fig. 2a Experimental Setup (animated) =====
+  // ===== STEP 6 — Experimental setup (faithful Fig. 2a redraw) =====
   {
-    title: 'Experimental Setup — Fig. 2(a): Full Measurement Chain',
-    keyColor: '#38bdf8',
-    key: 'DFB → Si₃N₄ chip [spiral + DBR] → ISO → AOM → self-heterodyne → PD/ESA + OSA + PNA',
-    desc: 'Fig. 2(a) shows the full characterisation setup. The DFB is butt-coupled to the Si₃N₄ spiral chip, which carries the 4 m spiral delay and DBR. The stabilised output exits via the −3 dB directional coupler on the bus waveguide, couples into a lens-end fibre, passes through an optical isolator (ISO), then splits into two paths: a self-heterodyne interferometer (AOM + delay + PD + ESA) for frequency noise / linewidth, and a high-resolution OSA (Apex, RBW = 5 MHz) for the optical spectrum. An OEWave OE4000 phase noise analyser (PNA) captures the Lorentzian floor. Photons are animated flowing through every element in sequence.',
+    title: 'Figure 2(a) — The Full Experimental Setup',
+    keyColor: C.blue,
+    key: 'DFB → Si₃N₄ spiral + DBR → output tap → lens-end fiber → ISO → self-heterodyne (AOM + delay) → PD → ESA  ·  also OSA & PNA',
+    desc: 'A faithful redraw of the paper\u2019s Fig. 2(a). On the left, the hybrid laser: a DFB butt-coupled to the Si₃N₄ chip that carries the 4 m spiral and the DBR. Its inset shows the broad free-running line collapsing to the narrow locked line. The stabilised output is tapped off the bus waveguide into a lens-end fiber, passes through an optical isolator (ISO), then enters a self-heterodyne measurement: a 50/50 coupler splits the light, one arm is frequency-shifted by an AOM while the other gets a long fiber delay + polarization paddles, they recombine, are amplified (EDFA), detected (PD), and the beat note is read on an ESA. Parallel taps feed the OSA (optical spectrum / SMSR) and PNA (frequency noise → linewidth).',
     draw(t) {
       ctx.fillStyle = C.bg; ctx.fillRect(0,0,W,H);
-      boldLabel('Fig. 2(a) — Experimental characterisation setup', W/2, 30, C.blue, 17);
+      boldLabel('Figure 2(a) — Full Experimental Setup', W/2, 28, C.blue, 18);
+      label('faithful replication of the paper schematic — light flows left → right', W/2, 47, C.faint, 13);
 
-      // ─── Layout constants ──────────────────────────────────────────────
-      // Row 1 (y≈110): DFB → Si3N4 chip → lens fiber → ISO → beam splitter
-      // Row 2 (y≈320): bottom arm: AOM → delay fiber → PD → ESA
-      // Row 2 top arm:  OSA branch + PNA branch
+      // local helpers
+      const densify = (corners, n) => {
+        const segs = []; let total = 0;
+        for (let i=0;i<corners.length-1;i++){ const d=Math.hypot(corners[i+1][0]-corners[i][0],corners[i+1][1]-corners[i][1]); segs.push(d); total+=d; }
+        const pts=[];
+        for (let i=0;i<=n;i++){ let dist=(i/n)*total,k=0; while(k<segs.length && dist>segs[k]){dist-=segs[k];k++;} if(k>=segs.length){pts.push(corners[corners.length-1]);continue;} const tt=segs[k]?dist/segs[k]:0; pts.push([corners[k][0]+tt*(corners[k+1][0]-corners[k][0]), corners[k][1]+tt*(corners[k+1][1]-corners[k][1])]); }
+        return pts;
+      };
+      const compBox = (x,y,w,h,name,col) => {
+        ctx.fillStyle='rgba(30,41,59,0.96)'; rr(x,y,w,h,4); ctx.fill();
+        ctx.strokeStyle=col||C.border; ctx.lineWidth=1.5; rr(x,y,w,h,4); ctx.stroke();
+        boldLabel(name, x+w/2, y+h/2+4, col||C.text, 11);
+      };
+      const node = (x,y) => { ctx.fillStyle=C.text; ctx.beginPath(); ctx.arc(x,y,2.5,0,Math.PI*2); ctx.fill(); };
 
-      const row1Y = 155;   // centre of main optical axis
-      const arm2Y = 360;   // lower arm centre
-      const arm3Y = 80;    // upper OSA arm centre
+      // ───────── LASER CHIP BOX ─────────
+      const lx=16, ly=62, lw=196, lh=168;
+      ctx.fillStyle='rgba(168,85,247,0.10)'; rr(lx,ly,lw,lh,8); ctx.fill();
+      ctx.strokeStyle='rgba(168,85,247,0.55)'; ctx.lineWidth=1.5; rr(lx,ly,lw,lh,8); ctx.stroke();
+      boldLabel('Laser chip', lx+lw/2, ly+17, '#c4b5fd', 13);
 
-      // helper: draw a box component
-      function comp(x, y, w, h, label1, label2, fillC, strokeC) {
-        ctx.fillStyle = fillC || 'rgba(30,41,59,0.95)';
-        rr(x, y-h/2, w, h, 4); ctx.fill();
-        ctx.strokeStyle = strokeC || C.border; ctx.lineWidth = 1.8;
-        rr(x, y-h/2, w, h, 4); ctx.stroke();
-        boldLabel(label1, x+w/2, y + (label2 ? -5 : 5), strokeC || C.text, 13);
-        if (label2) label(label2, x+w/2, y+10, C.muted, 10);
-      }
-
-      // ─── Si3N4 chip (large block) ─────────────────────────────────────
-      const chX=160, chY=92, chW=230, chH=130;
-      ctx.fillStyle='rgba(45,27,105,0.55)'; rr(chX,chY,chW,chH,8); ctx.fill();
-      ctx.strokeStyle=C.si3n4B; ctx.lineWidth=2; rr(chX,chY,chW,chH,8); ctx.stroke();
-      boldLabel('Si₃N₄ chip', chX+chW/2, chY-10, C.violet, 13);
-
-      // Spiral inside chip
-      const spts = spiralPoints(chX+chW/2-10, chY+chH/2+6, 10, 56, 4, 320);
-      drawSpiralPath(spts, 'rgba(167,139,250,0.65)', 2);
-      const sfrac = (t*0.0003)%1;
-      photonAlongPath(spts, sfrac, C.violet, 4);
-      label('4 m spiral', chX+chW/2-10, chY+chH/2+8, C.violet, 11);
-
-      // DBR at spiral end (inside chip, right side)
-      const dbx=chX+chW-38, dby=chY+28, dbw=30, dbh=50;
-      drawDBRblock(dbx, dby, dbw, dbh, t, 1);
-      label('DBR', dbx+dbw/2, dby+dbh+14, C.green, 11);
-
-      // directional coupler tap (inside chip, on bus)
-      const dcX=chX+54, dcY=row1Y;
-      ctx.fillStyle='rgba(56,189,248,0.15)'; rr(dcX-14, dcY-14, 28, 28, 4); ctx.fill();
-      ctx.strokeStyle=C.blue; ctx.lineWidth=1.5; rr(dcX-14, dcY-14, 28, 28, 4); ctx.stroke();
-      boldLabel('DC', dcX, dcY+4, C.blue, 12);
-      label('−3 dB', dcX, dcY+18, C.muted, 9);
-
-      // ─── DFB (left of chip) ───────────────────────────────────────────
-      const dfbX=22, dfbW=110, dfbH=68;
-      drawDFBChip(dfbX, row1Y-dfbH/2, dfbW, dfbH);
-      boldLabel('DFB', dfbX+dfbW/2, row1Y-dfbH/2-14, C.blue, 14);
-      label('215 mA', dfbX+dfbW/2, row1Y+dfbH/2+20, C.muted, 11);
-      // current arrows on top
-      for (let i=0;i<3;i++){
-        const ix=dfbX+22+i*33;
-        arrow(ix, row1Y-dfbH/2-28, ix, row1Y-dfbH/2-14, C.gold, 1.5);
-      }
-      label('I (50–300 mA)', dfbX+dfbW/2, row1Y-dfbH/2-38, C.gold, 10);
-
-      // butt-couple
-      ctx.setLineDash([3,3]); ctx.strokeStyle='#475569'; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(dfbX+dfbW, row1Y-20); ctx.lineTo(dfbX+dfbW, row1Y+20); ctx.stroke();
-      ctx.setLineDash([]);
-      photonsLine(dfbX+dfbW, row1Y, chX, row1Y, t, 0.0006, C.blue, 3, 0);
-
-      // first-feedback return (η₀, below bus)
-      ctx.strokeStyle='rgba(34,197,94,0.35)'; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+      // gold DFB lens shape
+      const dcx=lx+lw/2, dcy=ly+44;
       ctx.beginPath();
-      ctx.moveTo(chX+chW-10, row1Y+24);
-      ctx.lineTo(chX+chW-10, row1Y+48);
-      ctx.lineTo(dfbX+dfbW/2, row1Y+48);
-      ctx.lineTo(dfbX+dfbW/2, row1Y+dfbH/2);
-      ctx.stroke(); ctx.setLineDash([]);
-      label('1st feedback η₀ (on-chip)', (dfbX+chX+chW)/2, row1Y+64, C.green, 11);
+      ctx.moveTo(dcx-80,dcy); ctx.lineTo(dcx-62,dcy-13); ctx.lineTo(dcx+62,dcy-13);
+      ctx.lineTo(dcx+80,dcy); ctx.lineTo(dcx+62,dcy+13); ctx.lineTo(dcx-62,dcy+13); ctx.closePath();
+      const gg=ctx.createLinearGradient(dcx-80,0,dcx+80,0);
+      gg.addColorStop(0,'#b45309'); gg.addColorStop(0.5,'#fcd34d'); gg.addColorStop(1,'#b45309');
+      ctx.fillStyle=gg; ctx.fill();
+      boldLabel('DFB', dcx, dcy+4, '#451a03', 12);
 
-      // ─── Lens-end fibre (right of chip) ─────────────────────────────
-      const lensX = chX+chW+10;
-      comp(lensX, row1Y, 62, 36, 'LENS', 'fiber', 'rgba(30,41,59,0.9)', C.blue);
-      photonsLine(chX+chW, row1Y, lensX, row1Y, t, 0.0007, C.blue, 2, 0);
-      // outbound from lens
-      photonsLine(lensX+62, row1Y, lensX+110, row1Y, t, 0.0007, C.blue, 2, 0);
+      // spectrum inset
+      const sx=lx+16, sy=ly+76, sw=132, sh=78;
+      ctx.strokeStyle=C.faint; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx,sy+sh); ctx.lineTo(sx+sw,sy+sh); ctx.stroke();
+      ctx.save(); ctx.translate(sx-7, sy+sh/2); ctx.rotate(-Math.PI/2);
+      label('Intensity', 0, 0, C.faint, 10); ctx.restore();
+      label('ω', sx+sw-4, sy+sh+12, C.faint, 11);
+      const cx0=sx+sw*0.42;
+      const drawCurve=(hw,scale,color,lwid)=>{
+        ctx.strokeStyle=color; ctx.lineWidth=lwid; ctx.beginPath();
+        for(let i=0;i<=90;i++){ const xx=sx+(i/90)*sw; const rel=(xx-cx0)/(sw*0.5); const v=1/(1+Math.pow(rel/hw,2)); const yy=sy+sh-v*scale*(sh-6); i===0?ctx.moveTo(xx,yy):ctx.lineTo(xx,yy);} ctx.stroke();
+      };
+      drawCurve(0.55,0.62,'#d6b370',2);
+      drawCurve(0.18,0.85,C.blue,2);
+      drawCurve(0.035,1.0,C.red,2.4);
+      label('Reflection', sx+sw-2, sy+9, C.blue, 9.5, 'right');
+      label('Free-running', sx+sw-2, sy+21, '#d6b370', 9.5, 'right');
+      label('Locked', sx+sw-2, sy+33, C.red, 9.5, 'right');
 
+      // ───────── EXTERNAL CAVITY CHIP BOX ─────────
+      const ex=224, ey=62, ew=256, eh=168;
+      const eg=ctx.createLinearGradient(ex,0,ex+ew,0);
+      eg.addColorStop(0,'rgba(20,184,166,0.16)'); eg.addColorStop(1,'rgba(56,189,248,0.16)');
+      ctx.fillStyle=eg; rr(ex,ey,ew,eh,8); ctx.fill();
+      ctx.strokeStyle='rgba(45,212,191,0.55)'; ctx.lineWidth=1.5; rr(ex,ey,ew,eh,8); ctx.stroke();
+      boldLabel('Broadband external cavity chip', ex+ew/2, ey+16, '#5eead4', 12);
+
+      // butt-coupling indicator between chips
+      ctx.setLineDash([3,3]); ctx.strokeStyle='#64748b'; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(218,dcy-14); ctx.lineTo(218,dcy+14); ctx.stroke(); ctx.setLineDash([]);
+
+      const busY=ey+38;
+      // bus waveguide: red → yellow, exits right toward ISO
+      ctx.strokeStyle='#ef4444'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.moveTo(ex, busY); ctx.lineTo(ex+ew*0.5, busY); ctx.stroke();
+      ctx.strokeStyle='#fbbf24'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.moveTo(ex+ew*0.5, busY); ctx.lineTo(ex+ew, busY); ctx.stroke();
+      // direction arrow on bus
+      arrow(ex+ew-40, busY, ex+ew-18, busY, '#fbbf24', 2);
+      photonsLine(ex, busY, ex+ew, busY, t, 0.0005, C.blue, 3, 0);
+      label('bus waveguide (output tap → ISO)', ex+ew/2, busY-9, C.muted, 10);
+
+      // spiral serpentine
+      const sxa=ex+38, sxb=ex+ew-26, sy0=ey+72, sy1=ey+150, rows=5;
+      const corners=[]; const dyy=(sy1-sy0)/(rows-1);
+      for(let r=0;r<rows;r++){ const yy=sy0+r*dyy; if(r%2===0){corners.push([sxa,yy]);corners.push([sxb,yy]);}else{corners.push([sxb,yy]);corners.push([sxa,yy]);} }
+      // entry from bus down into spiral
+      ctx.strokeStyle='#f59e0b'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.moveTo(sxa, busY); ctx.lineTo(sxa, sy0); ctx.stroke();
+      // spiral path
+      ctx.strokeStyle='#f59e0b'; ctx.lineWidth=3; ctx.lineJoin='round';
+      ctx.beginPath(); corners.forEach((p,i)=> i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1])); ctx.stroke();
+      const spts=densify(corners, 260);
+      photonAlongPath(spts, (t*0.00022)%1, '#f59e0b', 4.5);
+      boldLabel('4 m spiral', ex+ew/2, sy0+ (sy1-sy0)*0.5 + 4, '#fb923c', 12);
+
+      // DBR at spiral end (true to reality — terminus)
+      const dend=corners[corners.length-1];
+      drawDBRblock(dend[0]-12, dend[1]-12, 30, 24, t, 1);
+      boldLabel('DBR', dend[0]+3, dend[1]+30, C.green, 11);
+      // reflection arrows back along spiral (blue, leftward)
+      photonAlongPath(spts, ((1-(t*0.00022))%1+1)%1, C.blue, 3.2);
+      arrow(dend[0]-2, dend[1]-18, dend[0]-44, dend[1]-18, C.blue, 1.6);
+      label('Reflection (η₀)', dend[0]-60, dend[1]-22, C.blue, 10, 'right');
+
+      // ───────── FIBER / MEASUREMENT NETWORK ─────────
+      const fiberCol='#ef4444';
       // ISO
-      const isoX = lensX+110;
-      comp(isoX, row1Y, 54, 36, 'ISO', 'isolator', 'rgba(30,41,59,0.9)', C.orange);
-      photonsLine(isoX+54, row1Y, isoX+110, row1Y, t, 0.0007, C.blue, 2, 0);
+      compBox(498, busY-12, 36, 24, 'ISO', C.blue);
+      // isolator direction hint
+      arrow(516, busY+18, 516, busY+8, C.blue, 1.4);
+      ctx.strokeStyle=fiberCol; ctx.lineWidth=2;
+      // ISO -> C1
+      ctx.beginPath(); ctx.moveTo(534, busY); ctx.lineTo(560, busY); ctx.stroke();
+      node(560, busY);
+      label('50/50', 560, busY+38, C.muted, 9.5);
 
-      // Beam splitter (fork point)
-      const bsX = isoX+110;
-      ctx.fillStyle='rgba(56,189,248,0.2)'; rr(bsX-10, row1Y-18, 20, 36, 3); ctx.fill();
-      ctx.strokeStyle=C.blue; ctx.lineWidth=1.8; rr(bsX-10, row1Y-18, 20, 36, 3); ctx.stroke();
-      ctx.strokeStyle=C.blue; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(bsX-10, row1Y+18); ctx.lineTo(bsX+10, row1Y-18); ctx.stroke();
-      label('BS', bsX, row1Y+32, C.blue, 11);
+      // top arm: C1 -> up -> AOM -> C2
+      ctx.beginPath(); ctx.moveTo(560,busY); ctx.lineTo(560, busY-18); ctx.lineTo(584, busY-18); ctx.stroke();
+      compBox(584, busY-28, 46, 20, 'AOM', C.orange);
+      ctx.beginPath(); ctx.moveTo(630, busY-18); ctx.lineTo(656, busY-18); ctx.lineTo(656, busY); ctx.stroke();
 
-      // ─── UPPER ARM → OSA + PNA ──────────────────────────────────────
-      // arm up
-      ctx.strokeStyle='rgba(56,189,248,0.4)'; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(bsX, row1Y-18); ctx.lineTo(bsX, arm3Y+18); ctx.stroke();
-      photonsLine(bsX, row1Y-18, bsX, arm3Y+18, t, 0.0008, '#818cf8', 2, 0);
+      // bottom arm: C1 -> down -> pol dots -> coil -> C2
+      ctx.beginPath(); ctx.moveTo(560,busY); ctx.lineTo(560, busY+24); ctx.lineTo(656, busY+24); ctx.lineTo(656, busY); ctx.stroke();
+      // polarization controller (3 paddles)
+      ctx.fillStyle='#0f172a'; ctx.strokeStyle=C.muted; ctx.lineWidth=1;
+      [576,588,600].forEach(px=>{ ctx.beginPath(); ctx.arc(px, busY+24, 4, 0, Math.PI*2); ctx.fill(); ctx.stroke(); });
+      // delay coil
+      ctx.strokeStyle=fiberCol; ctx.lineWidth=2;
+      for(let i=0;i<3;i++){ ctx.beginPath(); ctx.arc(622+i*9, busY+24, 5, 0, Math.PI*2); ctx.stroke(); }
+      node(656, busY);
+      label('50/50', 656, busY+38, C.muted, 9.5);
+      label('delay + pol', 612, busY+44, C.faint, 9);
 
-      // horizontal from split up
-      ctx.strokeStyle='rgba(56,189,248,0.4)'; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(bsX, arm3Y); ctx.lineTo(bsX+80, arm3Y); ctx.stroke();
-      photonsLine(bsX, arm3Y, bsX+80, arm3Y, t, 0.0008, '#818cf8', 2, 0);
+      // C2 -> EDFA -> PD -> ESA
+      ctx.strokeStyle=fiberCol; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(656, busY); ctx.lineTo(680, busY); ctx.stroke();
+      // EDFA triangle
+      ctx.fillStyle='rgba(56,189,248,0.25)'; ctx.strokeStyle=C.blue; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(680, busY-9); ctx.lineTo(702, busY); ctx.lineTo(680, busY+9); ctx.closePath(); ctx.fill(); ctx.stroke();
+      label('EDFA', 686, busY-15, C.blue, 9.5);
+      // PD half-circle
+      ctx.fillStyle='#1e293b'; ctx.strokeStyle=C.muted; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(712, busY, 9, Math.PI/2, -Math.PI/2, false); ctx.closePath(); ctx.fill(); ctx.stroke();
+      label('PD', 712, busY+24, C.muted, 9.5);
+      ctx.strokeStyle=fiberCol; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(721, busY); ctx.lineTo(734, busY); ctx.stroke();
+      compBox(734, busY-11, 48, 22, 'ESA', C.text);
 
-      comp(bsX+80, arm3Y, 76, 34, 'OSA', 'Apex AP2051A', 'rgba(30,41,59,0.9)', '#818cf8');
-      label('RBW=5 MHz', bsX+80+38, arm3Y+32, C.faint, 9);
+      // OSA / PNA taps (down from ISO–C1 segment)
+      ctx.strokeStyle=fiberCol; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(546, busY); ctx.lineTo(546, busY+92);
+      ctx.moveTo(546, busY+58); ctx.lineTo(596, busY+58);
+      ctx.moveTo(546, busY+92); ctx.lineTo(596, busY+92); ctx.stroke();
+      compBox(596, busY+47, 50, 22, 'OSA', C.violet);
+      compBox(596, busY+81, 50, 22, 'PNA', C.green);
+      label('Characterization', 770, busY+92, C.faint, 11);
 
-      // PNA branch
-      ctx.strokeStyle='rgba(56,189,248,0.3)'; ctx.lineWidth=1.2;
-      ctx.beginPath(); ctx.moveTo(bsX+156, arm3Y); ctx.lineTo(bsX+230, arm3Y); ctx.stroke();
-      comp(bsX+230, arm3Y, 78, 34, 'PNA', 'OE4000', 'rgba(30,41,59,0.9)', '#a78bfa');
-      label('Lorentzian Δν', bsX+230+39, arm3Y+32, C.faint, 9);
+      // photons flowing through fiber to ESA
+      photonsLine(534, busY, 656, busY-18, t, 0.0006, '#fca5a5', 2, 0);
 
-      // ─── LOWER ARM → Self-heterodyne → PD → ESA ────────────────────
-      photonsLine(bsX, row1Y+18, bsX, arm2Y-18, t, 0.0007, C.yellow, 2, 0);
-      ctx.strokeStyle='rgba(251,191,36,0.4)'; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(bsX, row1Y+18); ctx.lineTo(bsX, arm2Y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(bsX, arm2Y); ctx.lineTo(bsX+90, arm2Y); ctx.stroke();
-      photonsLine(bsX, arm2Y, bsX+90, arm2Y, t, 0.0006, C.yellow, 2, 0);
+      // ───────── LEGEND PANEL ─────────
+      const Lx=16, Ly=256, Lw=928, Lh=200;
+      ctx.fillStyle='rgba(15,23,42,0.85)'; rr(Lx,Ly,Lw,Lh,8); ctx.fill();
+      ctx.strokeStyle=C.border; ctx.lineWidth=1.2; rr(Lx,Ly,Lw,Lh,8); ctx.stroke();
+      boldLabel('Components & signal path', Lx+Lw/2, Ly+22, C.blue, 14);
 
-      // AOM
-      comp(bsX+90, arm2Y, 56, 36, 'AOM', '80 MHz shift', 'rgba(30,41,59,0.9)', C.yellow);
-      photonsLine(bsX+146, arm2Y, bsX+230, arm2Y, t, 0.0006, C.yellow, 2, 0);
-
-      // long delay fiber (self-heterodyne)
-      const fibX=bsX+230, fibY=arm2Y;
-      ctx.strokeStyle='rgba(251,191,36,0.5)'; ctx.lineWidth=2;
-      ctx.beginPath();
-      for (let i=0;i<=8;i++){
-        const fx=fibX + (i%2===0 ? 0 : 50);
-        const fy2=fibY - 40 + i*10;
-        i===0 ? ctx.moveTo(fx,fy2) : ctx.lineTo(fx,fy2);
-      }
-      ctx.stroke();
-      label('delay fiber', fibX+25, arm2Y+36, C.yellow, 11);
-
-      // PD
-      const pdX=fibX+70;
-      comp(pdX, arm2Y, 52, 34, 'PD', 'photodiode', 'rgba(30,41,59,0.9)', C.orange);
-      photonsLine(fibX+50, arm2Y, pdX, arm2Y, t, 0.0005, C.yellow, 2, 0);
-
-      // ESA
-      const esaX=pdX+80;
-      comp(esaX, arm2Y, 56, 34, 'ESA', 'freq. noise', 'rgba(30,41,59,0.9)', C.orange);
-      ctx.strokeStyle='rgba(251,146,60,0.5)'; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(pdX+52, arm2Y); ctx.lineTo(esaX, arm2Y); ctx.stroke();
-
-      // recombine label
-      label('self-heterodyne interferometer', fibX+90, arm2Y+52, C.yellow, 11);
-
-      // ─── 2nd feedback arrow (downstream η_F path, dashed red) ───────
-      const sFx = esaX + 56;
-      ctx.strokeStyle='rgba(248,113,113,0.4)'; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
-      ctx.beginPath(); ctx.moveTo(sFx, arm2Y); ctx.lineTo(sFx+60, arm2Y); ctx.stroke();
-      ctx.setLineDash([]);
-      // reflector stub
-      ctx.strokeStyle=C.red; ctx.lineWidth=2;
-      ctx.beginPath(); ctx.moveTo(sFx+60, arm2Y-16); ctx.lineTo(sFx+60, arm2Y+16); ctx.stroke();
-      label('η_F test reflector', sFx+62, arm2Y-24, C.red, 10, 'left');
-      label('(Fig. 1a, 2nd feedback)', sFx+62, arm2Y-10, C.faint, 9, 'left');
-
-      // ─── Legend ───────────────────────────────────────────────────────
-      const legX=20, legY=390;
-      ctx.fillStyle='rgba(15,23,42,0.85)'; rr(legX, legY, 140, 72, 6); ctx.fill();
-      ctx.strokeStyle=C.border; ctx.lineWidth=1; rr(legX, legY, 140, 72, 6); ctx.stroke();
-      boldLabel('Legend', legX+70, legY+16, C.muted, 11);
-      const legItems = [
-        [C.blue, 'optical path'],
-        [C.green, '1st feedback η₀'],
-        [C.red, '2nd feedback η_F'],
-        [C.yellow, 'electrical signal'],
+      ctx.textAlign='left';
+      const colL=[
+        ['DFB','laser gain chip — provides photons', C.blue],
+        ['DBR','Bragg reflector at spiral end — on-chip feedback η₀', C.green],
+        ['ISO','optical isolator — blocks back-reflection into the setup', C.blue],
+        ['50/50','fiber coupler — splits / recombines light', C.muted],
+        ['AOM','acousto-optic modulator — frequency shift (self-heterodyne)', C.orange],
       ];
-      legItems.forEach(([c,l],i)=>{
-        ctx.fillStyle=c; ctx.fillRect(legX+12, legY+26+i*12, 16, 5);
-        label(l, legX+88, legY+32+i*12, C.muted, 10);
-      });
+      const colR=[
+        ['EDFA','erbium-doped fiber amplifier', C.blue],
+        ['PD','photodiode — optical → electrical', C.muted],
+        ['ESA','electrical spectrum analyzer — beat note', C.text],
+        ['OSA','optical spectrum analyzer — SMSR, wavelength', C.violet],
+        ['PNA','phase-noise analyzer — frequency noise → Δν', C.green],
+      ];
+      const rowY = i => Ly+48+i*24;
+      colL.forEach((r,i)=>{ ctx.font='bold 13px "Segoe UI",sans-serif'; ctx.fillStyle=r[2]; ctx.fillText(r[0], Lx+22, rowY(i)); ctx.font='13px "Segoe UI",sans-serif'; ctx.fillStyle=C.muted; ctx.fillText('— '+r[1], Lx+88, rowY(i)); });
+      colR.forEach((r,i)=>{ ctx.font='bold 13px "Segoe UI",sans-serif'; ctx.fillStyle=r[2]; ctx.fillText(r[0], Lx+490, rowY(i)); ctx.font='13px "Segoe UI",sans-serif'; ctx.fillStyle=C.muted; ctx.fillText('— '+r[1], Lx+556, rowY(i)); });
+      ctx.textAlign='center';
+
+      // light path strip
+      ctx.fillStyle='rgba(56,189,248,0.10)'; rr(Lx+18, Ly+Lh-44, Lw-36, 30, 5); ctx.fill();
+      label('Path:  DFB → spiral (4 m) → DBR reflects back (locks) → output tap → fiber → ISO → 50/50 → [ AOM | delay+pol ] → 50/50 → EDFA → PD → ESA   (+ OSA, PNA)',
+        Lx+Lw/2, Ly+Lh-25, '#7dd3fc', 10.5);
+      // three black dots note
+      label('three dots on the lower arm = polarization controller paddles', Lx+Lw/2, Ly+Lh-9, C.faint, 9.5);
     }
   },
 
@@ -1105,7 +1114,7 @@ const STEPS = [
     }
   },
 
-  // ===== STEP 7 — Fiber BKR comparison (INTERACTIVE) =====
+  // ===== STEP 8 — Fiber BKR comparison (INTERACTIVE) =====
   {
     title: 'The Fiber BKR Alternative — and Why the Paper Goes On-Chip',
     keyColor: '#fb923c',
