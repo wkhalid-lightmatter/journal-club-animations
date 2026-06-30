@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How a Sub-Hz Laser Works — Step by Step</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0a0f1e;
+    color: #f1f5f9;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 12px 32px;
+  }
+  .page { max-width: 820px; width: 100%; }
+  h1 {
+    font-size: 1.25rem; font-weight: 700; color: #38bdf8;
+    margin-bottom: 3px;
+  }
+  .paper-ref { font-size: 0.75rem; color: #475569; margin-bottom: 16px; }
+
+  /* Step dots */
+  .step-dots {
+    display: flex; gap: 8px; justify-content: center; margin-bottom: 16px;
+  }
+  .dot {
+    width: 28px; height: 6px; border-radius: 3px;
+    background: #1e293b; border: 1px solid #334155;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .dot.active { background: #38bdf8; border-color: #38bdf8; }
+  .dot.done { background: #0ea5e9; border-color: #0ea5e9; opacity: 0.55; }
+
+  /* Canvas */
+  .canvas-wrap {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  canvas { display: block; width: 100%; }
+
+  /* Text area */
+  .step-text {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 14px;
+  }
+  .step-num { font-size: 0.72rem; color: #38bdf8; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 5px; }
+  .step-title { font-size: 1.15rem; font-weight: 700; margin-bottom: 8px; }
+  .step-desc { font-size: 0.88rem; color: #cbd5e1; line-height: 1.65; }
+  .key-box {
+    margin-top: 10px; padding: 9px 14px;
+    background: #0f172a; border-left: 3px solid #38bdf8;
+    border-radius: 0 5px 5px 0; font-size: 0.85rem;
+    color: #7dd3fc; font-family: monospace;
+    transition: border-color 0.3s, color 0.3s;
+  }
+
+  /* Nav */
+  .nav {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+  }
+  .btn {
+    padding: 9px 28px; border-radius: 6px; border: none; font-size: 0.92rem;
+    font-weight: 700; cursor: pointer; transition: all 0.15s; min-width: 110px;
+  }
+  #btn-prev { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  #btn-prev:hover:not(:disabled) { background: #334155; color: #f1f5f9; }
+  #btn-prev:disabled { opacity: 0.35; cursor: default; }
+  #btn-next { background: #0ea5e9; color: #fff; }
+  #btn-next:hover { background: #38bdf8; }
+  #btn-next.finish { background: #22c55e; }
+  #btn-next.finish:hover { background: #4ade80; }
+  .step-counter { font-size: 0.88rem; color: #475569; }
+  sup { font-size: 0.65em; vertical-align: super; }
+  sub { font-size: 0.65em; vertical-align: sub; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Building a Sub-Hz Laser: From Diode to ECL</h1>
+  <p class="paper-ref">Based on Dong et al., <em>Optica</em> 12(8), 1171 (2025)</p>
+
+  <div class="step-dots" id="step-dots"></div>
+
+  <div class="canvas-wrap">
+    <canvas id="c" width="800" height="310"></canvas>
+  </div>
+
+  <div class="step-text">
+    <div class="step-num" id="step-num">STEP 1 OF 6</div>
+    <div class="step-title" id="step-title">The Bare DFB Laser</div>
+    <div class="step-desc" id="step-desc"></div>
+    <div class="key-box" id="key-box"></div>
+  </div>
+
+  <div class="nav">
+    <button class="btn" id="btn-prev">← Back</button>
+    <span class="step-counter" id="step-counter">1 / 6</span>
+    <button class="btn" id="btn-next">Next →</button>
+  </div>
+</div>
+
+<script>
+// ── Colors ────────────────────────────────────────────────────────────────
+const C = {
+  bg:     '#0f172a',
+  panel:  '#1e293b',
+  border: '#334155',
+  blue:   '#38bdf8',
+  sky:    '#0ea5e9',
+  green:  '#22c55e',
+  yellow: '#fbbf24',
+  orange: '#f97316',
+  red:    '#f87171',
+  violet: '#a78bfa',
+  text:   '#f1f5f9',
+  muted:  '#64748b',
+  faint:  '#1e293b',
+  gold:   '#d97706',
+  goldL:  '#fbbf24',
+  chip:   '#0c2340',
+  chipBorder: '#1d6091',
+  si3n4:  '#2d1b69',
+  si3n4B: '#7c3aed',
+  dbr:    '#1a2e1a',
+  dbrB:   '#22c55e',
+};
+
+// ── Canvas utils ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function label(txt, x, y, color, size, align) {
+  ctx.fillStyle = color || C.muted;
+  ctx.font = (size || 11) + 'px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = align || 'center';
+  ctx.fillText(txt, x, y);
+}
+
+function boldLabel(txt, x, y, color, size) {
+  ctx.fillStyle = color || C.text;
+  ctx.font = 'bold ' + (size || 12) + 'px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(txt, x, y);
+}
+
+function glowCircle(x, y, r, color, alpha) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
+  g.addColorStop(0, color.replace(')', `,${alpha})`).replace('rgb', 'rgba'));
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r * 2.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+// ── Draw DFB chip ─────────────────────────────────────────────────────────
+function drawDFBChip(x, y, w, h, showGrating) {
+  // Body
+  ctx.fillStyle = C.chip;
+  rr(ctx, x, y, w, h, 4); ctx.fill();
+  ctx.strokeStyle = C.chipBorder; ctx.lineWidth = 1.5;
+  rr(ctx, x, y, w, h, 4); ctx.stroke();
+
+  // Active region
+  const arY = y + h * 0.38, arH = h * 0.24;
+  ctx.fillStyle = 'rgba(251,191,36,0.12)';
+  ctx.fillRect(x + 4, arY, w - 8, arH);
+  ctx.strokeStyle = 'rgba(251,191,36,0.5)'; ctx.lineWidth = 1;
+  ctx.strokeRect(x + 4, arY, w - 8, arH);
+
+  // Grating lines
+  if (showGrating !== false) {
+    ctx.strokeStyle = 'rgba(56,189,248,0.25)'; ctx.lineWidth = 0.8;
+    for (let i = 1; i < 16; i++) {
+      const gx = x + (i / 16) * w;
+      ctx.beginPath(); ctx.moveTo(gx, y + 6); ctx.lineTo(gx, y + h - 6); ctx.stroke();
+    }
+  }
+
+  // Top contact
+  const grd = ctx.createLinearGradient(x, y - 14, x, y - 2);
+  grd.addColorStop(0, '#92400e'); grd.addColorStop(1, C.gold);
+  ctx.fillStyle = grd;
+  rr(ctx, x - 4, y - 16, w + 8, 14, 2); ctx.fill();
+
+  // Bottom contact
+  ctx.fillStyle = '#78350f';
+  ctx.fillRect(x - 4, y + h + 2, w + 8, 6);
+}
+
+// ── Draw Si3N4 chip ───────────────────────────────────────────────────────
+function drawSiChip(x, y, size) {
+  ctx.fillStyle = C.si3n4;
+  rr(ctx, x, y, size, size, 6); ctx.fill();
+  ctx.strokeStyle = C.si3n4B; ctx.lineWidth = 1.5;
+  rr(ctx, x, y, size, size, 6); ctx.stroke();
+  boldLabel('Si₃N₄', x + size / 2, y + size + 14, C.violet, 10);
+  label('chip', x + size / 2, y + size + 26, C.muted, 9);
+}
+
+// ── Draw DBR block ────────────────────────────────────────────────────────
+function drawDBR(x, y, w, h) {
+  ctx.fillStyle = C.dbr;
+  rr(ctx, x, y, w, h, 4); ctx.fill();
+  ctx.strokeStyle = C.dbrB; ctx.lineWidth = 1.5;
+  rr(ctx, x, y, w, h, 4); ctx.stroke();
+  // Chevron grating
+  ctx.strokeStyle = 'rgba(34,197,94,0.4)'; ctx.lineWidth = 1;
+  const rows = 5;
+  for (let r = 0; r < rows; r++) {
+    const gy = y + (r + 0.5) * h / rows;
+    for (let i = 0; i < 5; i++) {
+      const gx = x + 4 + i * (w - 8) / 4;
+      ctx.beginPath();
+      ctx.moveTo(gx, gy - 3); ctx.lineTo(gx + (w - 8) / 8, gy); ctx.lineTo(gx, gy + 3);
+      ctx.stroke();
+    }
+  }
+  boldLabel('DBR', x + w / 2, y + h + 14, C.green, 10);
+}
+
+// ── Draw Lorentzian spectrum ──────────────────────────────────────────────
+function drawLorentzian(x, y, w, h, normFwhm, color, fwhmLabel, noiseLevel) {
+  ctx.save();
+  // Box
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; rr(ctx, x, y, w, h, 4); ctx.fill();
+  ctx.strokeStyle = '#334155'; ctx.lineWidth = 1; rr(ctx, x, y, w, h, 4); ctx.stroke();
+
+  const px = (f) => x + w / 2 + f * w;
+  const lorentz = (f) => 1 / (1 + Math.pow(f / normFwhm, 2));
+
+  // Noise floor
+  if (noiseLevel) {
+    ctx.strokeStyle = 'rgba(100,116,139,0.4)'; ctx.lineWidth = 0.8;
+    ctx.setLineDash([3, 3]);
+    const ny = y + h - noiseLevel * (h - 24) - 8;
+    ctx.beginPath(); ctx.moveTo(x + 4, ny); ctx.lineTo(x + w - 4, ny); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Fill
+  ctx.beginPath();
+  ctx.moveTo(px(-0.5), y + h - 8);
+  for (let i = 0; i <= 100; i++) {
+    const f = -0.5 + i / 100;
+    const amp = lorentz(f) * (h - 24) * 0.90;
+    ctx.lineTo(px(f), y + h - 8 - amp);
+  }
+  ctx.lineTo(px(0.5), y + h - 8);
+  ctx.closePath();
+  ctx.fillStyle = color + '25';
+  ctx.fill();
+
+  // Stroke
+  ctx.strokeStyle = color; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i <= 100; i++) {
+    const f = -0.5 + i / 100;
+    const amp = lorentz(f) * (h - 24) * 0.90;
+    i === 0 ? ctx.moveTo(px(f), y + h - 8 - amp) : ctx.lineTo(px(f), y + h - 8 - amp);
+  }
+  ctx.stroke();
+
+  // FWHM bracket
+  const peakY = y + h - 8 - (h - 24) * 0.90;
+  const halfY = y + h - 8 - (h - 24) * 0.45;
+  const hw = normFwhm * w;
+  if (hw > 8) {
+    ctx.strokeStyle = C.yellow; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px(-normFwhm), halfY - 4); ctx.lineTo(px(-normFwhm), halfY + 4); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(px(normFwhm),  halfY - 4); ctx.lineTo(px(normFwhm),  halfY + 4); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(px(-normFwhm), halfY); ctx.lineTo(px(normFwhm), halfY); ctx.stroke();
+  }
+
+  // Label
+  if (fwhmLabel) {
+    ctx.fillStyle = C.yellow;
+    ctx.font = 'bold 10px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Δν = ' + fwhmLabel, x + w / 2, y + h - 1);
+  }
+
+  ctx.restore();
+}
+
+// ── Photon along a straight path ──────────────────────────────────────────
+function photonsLine(x1, y1, x2, y2, t, speed, color, n, spread) {
+  speed = speed || 0.0004;
+  n = n || 5; spread = spread || 0;
+  for (let i = 0; i < n; i++) {
+    const frac = ((t * speed + i / n) % 1);
+    const px = x1 + frac * (x2 - x1);
+    const py = y1 + frac * (y2 - y1) + spread * Math.sin(i * 1.7 + frac * 3);
+    const alpha = Math.min(1, Math.sin(frac * Math.PI) * 1.6);
+    glowCircle(px, py, 3, color, alpha * 0.85);
+  }
+}
+
+// ── Draw a spiral path (returns points) ──────────────────────────────────
+function spiralPoints(cx, cy, r0, r1, turns, npts) {
+  const pts = [];
+  for (let i = 0; i <= npts; i++) {
+    const θ = (i / npts) * turns * 2 * Math.PI;
+    const r = r0 + (r1 - r0) * (i / npts);
+    pts.push([cx + r * Math.cos(θ - Math.PI / 2), cy + r * Math.sin(θ - Math.PI / 2)]);
+  }
+  return pts;
+}
+
+function drawSpiralPath(pts, color, lw) {
+  ctx.strokeStyle = color || C.violet;
+  ctx.lineWidth = lw || 1.8;
+  ctx.beginPath();
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]));
+  ctx.stroke();
+}
+
+function photonAlongPath(pts, frac, color) {
+  const idx = Math.min(pts.length - 2, Math.floor(frac * (pts.length - 1)));
+  const t2 = frac * (pts.length - 1) - idx;
+  const p = pts[idx], q = pts[idx + 1];
+  const x = p[0] + t2 * (q[0] - p[0]);
+  const y = p[1] + t2 * (q[1] - p[1]);
+  glowCircle(x, y, 3.5, color, 0.9);
+}
+
+// ── Annotation arrow ──────────────────────────────────────────────────────
+function annotationArrow(x1, y1, x2, y2, color) {
+  ctx.strokeStyle = color || C.muted;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.setLineDash([]);
+  // arrowhead
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  ctx.fillStyle = color || C.muted;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - 8 * Math.cos(angle - 0.4), y2 - 8 * Math.sin(angle - 0.4));
+  ctx.lineTo(x2 - 8 * Math.cos(angle + 0.4), y2 - 8 * Math.sin(angle + 0.4));
+  ctx.closePath(); ctx.fill();
+}
+
+// ── STEP DEFINITIONS ──────────────────────────────────────────────────────
+const STEPS = [
+  {
+    num: 1, title: 'The Bare DFB Laser',
+    keyColor: '#f87171',
+    key: 'Δν (free-running) ≈ 76 kHz  ·  τ_ph ≈ a few picoseconds',
+    desc: 'A Distributed-Feedback (DFB) diode laser uses an internal grating etched along the active waveguide to select a single emission wavelength. Current flows through the top gold contact into the quantum-well (QW) active region — electrons and holes recombine to create photons. The grating acts as a built-in mirror that bounces light back and forth. But this "resonator" is only ~300 µm long — photons escape after just a few picoseconds. That short lifetime means the laser has broad, noisy linewidth (~76 kHz).',
+    draw(t) {
+      ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+
+      // Title label
+      boldLabel('Free-running DFB', 160, 28, C.blue, 13);
+
+      // DFB chip
+      const cx = 60, cy = 100, cw = 180, ch = 80;
+      drawDFBChip(cx, cy, cw, ch);
+      label('QW active region', cx + cw / 2, cy + ch * 0.5 + 3, C.yellow, 9);
+      label('DFB grating (λ/4n spacing)', cx + cw / 2, cy + ch + 18, C.muted, 9);
+      label('L ≈ 300 µm', cx + cw / 2, cy + ch + 30, C.muted, 9);
+
+      // Current arrows
+      for (let i = 0; i < 3; i++) {
+        const ix = cx + 30 + i * 60;
+        const phase = (t * 0.002 + i * 0.33) % 1;
+        const iy = cy - 32 + phase * 20;
+        ctx.strokeStyle = C.gold; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(ix, cy - 40); ctx.lineTo(ix, cy - 18); ctx.stroke();
+        // arrowhead
+        ctx.fillStyle = C.gold;
+        ctx.beginPath();
+        ctx.moveTo(ix, cy - 18);
+        ctx.lineTo(ix - 4, cy - 24); ctx.lineTo(ix + 4, cy - 24);
+        ctx.closePath(); ctx.fill();
+      }
+      label('Electrical drive', cx + cw / 2, cy - 50, C.gold, 9);
+
+      // Output beam
+      const bx = cx + cw, by = cy + ch / 2;
+      // beam cone
+      for (let i = 0; i < 7; i++) {
+        const angle = (i - 3) * 0.07;
+        const spread = 260;
+        ctx.strokeStyle = `rgba(56,189,248,0.04)`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + spread * Math.cos(angle), by + spread * Math.sin(angle));
+        ctx.stroke();
+      }
+      // main beam
+      ctx.strokeStyle = 'rgba(56,189,248,0.35)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + 260, by); ctx.stroke();
+
+      photonsLine(bx, by, bx + 255, by, t, 0.00038, C.blue, 5, 0);
+
+      // τ_ph annotation
+      label('τ_ph ≈ few ps', cx + cw / 2, cy - 68, '#f87171', 10);
+      ctx.strokeStyle = '#f87171'; ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy + ch); ctx.stroke(); // left facet
+      ctx.beginPath(); ctx.moveTo(cx + cw, cy); ctx.lineTo(cx + cw, cy + ch); ctx.stroke(); // right facet
+      ctx.setLineDash([]);
+      // double arrow for cavity length
+      ctx.strokeStyle = '#f87171'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx + 6, cy - 60); ctx.lineTo(cx + cw - 6, cy - 60); ctx.stroke();
+      // arrowheads
+      ctx.fillStyle = '#f87171';
+      ctx.beginPath(); ctx.moveTo(cx + 6, cy - 60); ctx.lineTo(cx + 14, cy - 55); ctx.lineTo(cx + 14, cy - 65); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx + cw - 6, cy - 60); ctx.lineTo(cx + cw - 14, cy - 55); ctx.lineTo(cx + cw - 14, cy - 65); ctx.closePath(); ctx.fill();
+      label('L ≈ 300 µm (short!)', cx + cw / 2, cy - 72, '#f87171', 9);
+
+      // Spectrum
+      drawLorentzian(310, 60, 190, 130, 0.18, '#f87171', '76 kHz', 0.07);
+      boldLabel('Output spectrum', 405, 56, C.muted, 10);
+      label('Broad, noisy', 405, 208, '#f87171', 10);
+
+      // Photon lifetime explanation box
+      const bx2 = 516, by2 = 60, bw2 = 270, bh2 = 200;
+      ctx.fillStyle = 'rgba(30,41,59,0.7)';
+      rr(ctx, bx2, by2, bw2, bh2, 6); ctx.fill();
+      ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
+      rr(ctx, bx2, by2, bw2, bh2, 6); ctx.stroke();
+      boldLabel('Why is linewidth broad?', bx2 + bw2 / 2, by2 + 18, C.blue, 10);
+      const lines = [
+        '• Short cavity (300 µm) → photons',
+        '  escape in ~ps',
+        '• Each escape event adds phase noise',
+        '• Schawlow–Townes:',
+        '  Δν ∝ 1 / τ_ph²',
+        '• Also: linewidth enhancement',
+        '  factor α_H = 2.3 (amplitude-',
+        '  phase coupling) broadens further',
+      ];
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '9.5px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      lines.forEach((l, i) => ctx.fillText(l, bx2 + 12, by2 + 36 + i * 18));
+
+      label('α_H = 2.3  →  ×(1 + α_H²) broader', bx2 + bw2 / 2, by2 + bh2 - 8, '#fbbf24', 9);
+    }
+  },
+  {
+    num: 2, title: 'Why Cavity Length Controls Linewidth',
+    keyColor: '#38bdf8',
+    key: 'Δν ∝ 1/τ_ph²  ·  Longer cavity → longer τ_ph → narrower linewidth',
+    desc: 'The Schawlow–Townes formula says linewidth scales as 1/τ_ph². The photon lifetime τ_ph = 2nL/c — it grows linearly with cavity length L. So doubling cavity length gives 4× narrower linewidth. A 4-meter external waveguide makes the effective cavity ~13,000× longer than the bare DFB chip. This is the core idea: we want photons to circulate for as long as possible before escaping, giving the optical field time to build up its coherence.',
+    draw(t) {
+      ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+      boldLabel('The Photon Lifetime Principle', W / 2, 28, C.blue, 14);
+
+      // Short cavity box (left)
+      const s = { x: 50, y: 80, w: 240, h: 160 };
+      ctx.fillStyle = 'rgba(127,29,29,0.2)';
+      rr(ctx, s.x, s.y, s.w, s.h, 6); ctx.fill();
+      ctx.strokeStyle = '#f87171'; ctx.lineWidth = 1.5;
+      rr(ctx, s.x, s.y, s.w, s.h, 6); ctx.stroke();
+      boldLabel('Short Cavity  (~300 µm)', s.x + s.w / 2, s.y - 10, '#f87171', 11);
+
+      // Photons bouncing fast
+      const numS = 3;
+      for (let i = 0; i < numS; i++) {
+        const phase = ((t * 0.0012 + i / numS) % 1);
+        const px2 = s.x + 16 + (phase < 0.5 ? phase * 2 : (1 - phase) * 2) * (s.w - 32);
+        const py2 = s.y + 40 + i * 35;
+        glowCircle(px2, py2, 4, '#f87171', 0.85);
+      }
+      // Leaking photons
+      for (let i = 0; i < 4; i++) {
+        const lp = ((t * 0.001 + i * 0.25) % 1);
+        if (lp > 0.8) {
+          const lx = s.x + s.w + (lp - 0.8) * 5 * 120;
+          const ly = s.y + 40 + i * 35;
+          glowCircle(lx, ly, 3, '#f87171', (1 - lp) * 4);
+        }
+      }
+      label('Photons escape quickly', s.x + s.w / 2, s.y + s.h + 14, '#f87171', 10);
+      label('τ_ph ≈ a few ps', s.x + s.w / 2, s.y + s.h + 26, '#f87171', 9);
+      label('→ Δν ≈ 76 kHz', s.x + s.w / 2, s.y + s.h + 40, '#f87171', 11);
+
+      // Long cavity box (right)
+      const l2 = { x: 450, y: 80, w: 320, h: 160 };
+      ctx.fillStyle = 'rgba(5,46,22,0.3)';
+      rr(ctx, l2.x, l2.y, l2.w, l2.h, 6); ctx.fill();
+      ctx.strokeStyle = C.green; ctx.lineWidth = 1.5;
+      rr(ctx, l2.x, l2.y, l2.w, l2.h, 6); ctx.stroke();
+      boldLabel('Long Cavity  (~4 m equivalent)', l2.x + l2.w / 2, l2.y - 10, C.green, 11);
+
+      // Photons bouncing slowly (fewer bounces per time)
+      const numL = 2;
+      for (let i = 0; i < numL; i++) {
+        const phase = ((t * 0.00025 + i / numL) % 1);
+        const px2 = l2.x + 16 + (phase < 0.5 ? phase * 2 : (1 - phase) * 2) * (l2.w - 32);
+        const py2 = l2.y + 55 + i * 60;
+        glowCircle(px2, py2, 4, C.green, 0.85);
+      }
+      label('Photons stay much longer', l2.x + l2.w / 2, l2.y + l2.h + 14, C.green, 10);
+      label('τ_ph ≈ 100× longer', l2.x + l2.w / 2, l2.y + l2.h + 26, C.green, 9);
+      label('→ Δν ≈ 0.45 Hz', l2.x + l2.w / 2, l2.y + l2.h + 40, C.green, 11);
+
+      // Center formula
+      const fx = W / 2, fy = 262;
+      ctx.fillStyle = 'rgba(30,41,59,0.9)';
+      rr(ctx, fx - 130, fy - 26, 260, 52, 6); ctx.fill();
+      ctx.strokeStyle = C.blue; ctx.lineWidth = 1;
+      rr(ctx, fx - 130, fy - 26, 260, 52, 6); ctx.stroke();
+      ctx.fillStyle = C.blue;
+      ctx.font = 'bold 14px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Δν ∝ 1/τ_ph²', fx, fy);
+      label('Schawlow–Townes formula', fx, fy + 18, C.muted, 9);
+
+      // vs annotation
+      ctx.fillStyle = C.muted;
+      ctx.font = 'bold 16px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('vs.', W / 2, 162);
+    }
+  },
+  {
+    num: 3, title: 'The Silicon Nitride Waveguide Chip',
+    keyColor: '#a78bfa',
+    key: '4 metres of waveguide coiled into a 5.6 × 5.6 mm² footprint  ·  low loss: 0.02 dB/m',
+    desc: 'Silicon nitride (Si₃N₄) is a CMOS-compatible photonic platform with extremely low optical propagation loss — about 0.02 dB/m. The chip in this paper contains a 4-meter-long spiral waveguide folded into a 5.6 × 5.6 mm² die. When the DFB laser couples into this waveguide, light travels the full 4-metre path before reflecting off the DBR at the other end. This enormously extends the effective photon lifetime, and the chip replaces what would otherwise require metres of optical fiber.',
+    draw(t) {
+      ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+      boldLabel('The Si₃N₄ Waveguide Chip', W / 2, 28, C.violet, 14);
+
+      // Chip boundary
+      const cx = 270, cy = 50, csize = 220;
+      ctx.fillStyle = 'rgba(45,27,105,0.5)';
+      rr(ctx, cx, cy, csize, csize, 8); ctx.fill();
+      ctx.strokeStyle = C.si3n4B; ctx.lineWidth = 2;
+      rr(ctx, cx, cy, csize, csize, 8); ctx.stroke();
+      boldLabel('5.6 × 5.6 mm² chip', cx + csize / 2, cy - 12, C.violet, 10);
+
+      // Spiral waveguide
+      const nTurns = 5, nPts = 400;
+      const spts = spiralPoints(cx + csize / 2, cy + csize / 2 - 10, 12, 92, nTurns, nPts);
+      // Add straight segment from spiral end to right edge (chip output)
+      const exitPt = spts[spts.length - 1];
+
+      drawSpiralPath(spts, 'rgba(167,139,250,0.6)', 2.5);
+
+      // Entry/exit ports
+      const entryPt = spts[0];
+      ctx.fillStyle = C.violet;
+      ctx.beginPath(); ctx.arc(entryPt[0], entryPt[1], 5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(exitPt[0], exitPt[1], 5, 0, Math.PI * 2); ctx.fill();
+
+      // Photon along spiral
+      const frac = (t * 0.00018) % 1;
+      photonAlongPath(spts, frac, C.violet);
+
+      // "4 m" label inside
+      boldLabel('4 metres of', cx + csize / 2, cy + csize / 2 - 10, C.violet, 11);
+      boldLabel('waveguide', cx + csize / 2, cy + csize / 2 + 6, C.violet, 11);
+      label('≈ 13,000× longer than DFB', cx + csize / 2, cy + csize / 2 + 24, C.muted, 9);
+
+      // Left side: DFB chip (small)
+      const dx = 60, dy = 130, dw = 120, dh = 60;
+      drawDFBChip(dx, dy, dw, dh);
+      boldLabel('DFB', dx + dw / 2, dy - 12, C.blue, 10);
+      label('Gain source', dx + dw / 2, dy + dh + 14, C.muted, 9);
+
+      // Connection waveguide DFB → chip
+      const linkY = dy + dh / 2;
+      ctx.strokeStyle = 'rgba(56,189,248,0.4)'; ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(dx + dw, linkY); ctx.lineTo(cx, cy + csize / 2); ctx.stroke();
+      ctx.setLineDash([]);
+      photonsLine(dx + dw, linkY, cx, cy + csize / 2, t, 0.0003, C.blue, 3, 0);
+      label('edge coupling', (dx + dw + cx) / 2, linkY - 10, C.muted, 9);
+
+      // Right side: DBR (small)
+      const rx = cx + csize + 20, ry = cy + csize / 2 - 25, rw = 55, rh = 50;
+      drawDBR(rx, ry, rw, rh);
+      // connection chip → DBR
+      ctx.strokeStyle = 'rgba(34,197,94,0.4)'; ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(cx + csize, cy + csize / 2); ctx.lineTo(rx, ry + rh / 2); ctx.stroke();
+      ctx.setLineDash([]);
+      photonsLine(cx + csize, cy + csize / 2, rx, ry + rh / 2, t, 0.0003, C.green, 2, 0);
+
+      // Specs box
+      const spx = 570, spy = 48, spw = 215, sph = 220;
+      ctx.fillStyle = 'rgba(30,41,59,0.9)';
+      rr(ctx, spx, spy, spw, sph, 6); ctx.fill();
+      ctx.strokeStyle = C.border; ctx.lineWidth = 1;
+      rr(ctx, spx, spy, spw, sph, 6); ctx.stroke();
+      boldLabel('Si₃N₄ chip specs', spx + spw / 2, spy + 18, C.violet, 11);
+      const specs = [
+        ['Waveguide length', '4 m'],
+        ['Chip size', '5.6 × 5.6 mm²'],
+        ['Propagation loss', '0.02 dB/m'],
+        ['Refractive index n', '~2.0 (SiN)'],
+        ['Core size (H×W)', '800 × 2000 nm'],
+        ['Platform', 'CMOS-compatible'],
+        ['Coupling to DFB', '~2.7 dB loss'],
+      ];
+      ctx.textAlign = 'left';
+      specs.forEach(([k, v], i) => {
+        ctx.fillStyle = C.muted;
+        ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+        ctx.fillText(k, spx + 12, spy + 40 + i * 24);
+        ctx.fillStyle = C.text;
+        ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(v, spx + spw - 12, spy + 40 + i * 24);
+        ctx.textAlign = 'left';
+      });
+
+      // τ_ph result
+      ctx.fillStyle = 'rgba(56,189,248,0.12)';
+      rr(ctx, spx + 8, spy + sph - 44, spw - 16, 34, 4); ctx.fill();
+      ctx.fillStyle = C.blue;
+      ctx.font = 'bold 10px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('τ_ph now ~100× longer', spx + spw / 2, spy + sph - 26);
+      ctx.fillStyle = C.muted;
+      ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+      ctx.fillText('→ 10,000× narrower Δν', spx + spw / 2, spy + sph - 12);
+    }
+  },
+  {
+    num: 4, title: 'The DBR Grating — Frequency-Selective Feedback',
+    keyColor: '#22c55e',
+    key: 'DBR coupling κL = 1  ·  reflects only Bragg wavelength λ_B = 2nΛ back into the laser',
+    desc: 'The Distributed Bragg Reflector (DBR) is a periodic corrugation etched into the waveguide. Its period Λ is chosen so that light at the Bragg wavelength λ_B = 2nΛ reflects constructively, while other wavelengths pass through. This provides frequency-selective optical feedback: only photons at exactly the right wavelength are sent back into the DFB active region. The result is that the laser locks to that frequency, suppressing all other modes. The coupling strength κL = 1 in this paper — strong enough to lock, not so strong it causes instability.',
+    draw(t) {
+      ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+      boldLabel('DBR: Frequency-Selective Mirror', W / 2, 28, C.green, 14);
+
+      // Incoming multi-wavelength beam (left)
+      const beamY = 155;
+      const colors2 = ['#f87171','#fb923c','#fbbf24','#4ade80','#38bdf8','#a78bfa'];
+      label('Broadband light in', 90, 80, C.muted, 10);
+      for (let i = 0; i < colors2.length; i++) {
+        const oy = (i - 2.5) * 7;
+        ctx.strokeStyle = colors2[i] + '60'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(30, beamY + oy); ctx.lineTo(230, beamY + oy); ctx.stroke();
+      }
+      photonsLine(30, beamY, 220, beamY, t, 0.0003, C.yellow, 5, 12);
+
+      // DBR block
+      const dbx = 230, dby = beamY - 60, dbw = 80, dbh = 120;
+      ctx.fillStyle = 'rgba(26,46,26,0.9)';
+      rr(ctx, dbx, dby, dbw, dbh, 4); ctx.fill();
+      ctx.strokeStyle = C.green; ctx.lineWidth = 2;
+      rr(ctx, dbx, dby, dbw, dbh, 4); ctx.stroke();
+
+      // Grating stripes inside DBR
+      const nStripes = 14;
+      for (let i = 0; i <= nStripes; i++) {
+        const gx = dbx + (i / nStripes) * dbw;
+        const phase = (t * 0.001 + i * 0.5) % 1;
+        ctx.strokeStyle = `rgba(34,197,94,${0.2 + phase * 0.15})`; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(gx, dby + 8); ctx.lineTo(gx, dby + dbh - 8); ctx.stroke();
+      }
+      boldLabel('DBR', dbx + dbw / 2, dby + dbh + 16, C.green, 11);
+      label('κL = 1 · Λ = λ_B / 2n', dbx + dbw / 2, dby + dbh + 30, C.muted, 9);
+
+      // Bragg wavelength → reflected back
+      const bPhase = (t * 0.0003) % 1;
+      if (bPhase < 0.5) {
+        // Going in
+        const bx = 30 + bPhase * 2 * 200;
+        glowCircle(bx, beamY, 4.5, C.green, 0.9);
+      } else {
+        // Bouncing back
+        const bx = 230 - (bPhase - 0.5) * 2 * 200;
+        glowCircle(Math.max(30, bx), beamY, 4.5, C.green, 0.9);
+      }
+
+      // Reflection arrow
+      annotationArrow(dbx - 5, beamY - 20, 30, beamY - 60, C.green);
+      label('λ_B reflected', 80, beamY - 66, C.green, 10);
+
+      // Transmitted (other wavelengths)
+      label('Other λ transmitted', 380, 80, C.muted, 10);
+      for (let i = 0; i < colors2.length - 2; i++) {
+        const oy = (i - 1) * 10;
+        ctx.strokeStyle = colors2[i] + '40'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(dbx + dbw, beamY + oy); ctx.lineTo(420, beamY + oy); ctx.stroke();
+      }
+
+      // Reflection spectrum
+      drawLorentzian(440, 50, 160, 110, 0.06, C.green, 'λ_Bragg', 0.05);
+      boldLabel('DBR reflection spectrum', 520, 46, C.muted, 10);
+      label('Narrow peak at Bragg λ', 520, 174, C.green, 9);
+
+      // Transmitted spectrum
+      drawLorentzian(440, 180, 160, 90, 0.45, '#64748b', '', 0);
+      label('← notch at Bragg λ', 520, 278, C.muted, 8);
+
+      // Why it matters
+      const wx = 618, wy = 48, ww = 180, wh = 254;
+      ctx.fillStyle = 'rgba(30,41,59,0.9)';
+      rr(ctx, wx, wy, ww, wh, 6); ctx.fill();
+      ctx.strokeStyle = C.border; ctx.lineWidth = 1;
+      rr(ctx, wx, wy, ww, wh, 6); ctx.stroke();
+      boldLabel('Why this matters', wx + ww / 2, wy + 18, C.green, 11);
+      const why = [
+        '1. Selects ONE wavelength',
+        '   → single-mode operation',
+        '',
+        '2. Phase-coherent feedback',
+        '   → forces laser phase to',
+        '   follow ECL mode',
+        '',
+        '3. Effective cavity is now',
+        '   DFB + waveguide + DBR',
+        '   L_eff ≈ 4 m',
+        '',
+        '4. τ_ph_eff = (2n·L_eff)/c',
+        '   → ~100ns vs. ~ps',
+      ];
+      ctx.textAlign = 'left';
+      why.forEach((l, i) => {
+        ctx.fillStyle = l.startsWith('1.') || l.startsWith('2.') || l.startsWith('3.') || l.startsWith('4.')
+          ? C.green : C.muted;
+        ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+        ctx.fillText(l, wx + 10, wy + 36 + i * 16);
+      });
+    }
+  },
+  {
+    num: 5, title: 'The Complete Hybrid External-Cavity Laser',
+    keyColor: '#38bdf8',
+    key: 'System: QW DFB + Si₃N₄ waveguide (4 m) + DBR · η₀ ≈ −34 dB into DFB',
+    desc: 'The full hybrid laser integrates three chips on a single platform: the QW DFB provides optical gain, the Si₃N₄ waveguide spiral extends the photon lifetime, and the DBR locks the frequency and mirrors light back. Light exits the DFB front facet, couples into the Si₃N₄ waveguide via edge coupling, travels the 4-metre spiral path, reflects off the DBR, and returns back through the waveguide into the DFB — forming a complete optical resonator. The fraction of light that re-enters the DFB is η₀ ≈ −34 dB (the "passive feedback level"), which sets the operating point and helps suppress the free-running noise by over 51 dB.',
+    draw(t) {
+      ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+      boldLabel('Complete Hybrid ECL System', W / 2, 22, C.blue, 14);
+
+      // Layout: [DFB] ---> [Si3N4 waveguide chip] --> [DBR] --> output
+      const dfbX = 24, dfbY = 108, dfbW = 120, dfbH = 65;
+      drawDFBChip(dfbX, dfbY, dfbW, dfbH);
+      boldLabel('QW DFB', dfbX + dfbW / 2, dfbY - 16, C.blue, 11);
+      label('Gain · α_H = 2.3', dfbX + dfbW / 2, dfbY + dfbH + 14, C.muted, 9);
+
+      // Edge coupling interface
+      const ecX = dfbX + dfbW + 4;
+      ctx.strokeStyle = '#475569'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(ecX + 10, dfbY - 8); ctx.lineTo(ecX + 10, dfbY + dfbH + 8); ctx.stroke();
+      ctx.setLineDash([]);
+      label('edge', ecX + 10, dfbY - 18, C.muted, 8);
+      label('couple', ecX + 10, dfbY - 8, C.muted, 8);
+      label('−2.7 dB', ecX + 10, dfbY + dfbH + 22, C.muted, 8);
+
+      // Si3N4 chip
+      const siX = dfbX + dfbW + 20, siY = 50, siSize = 170;
+      ctx.fillStyle = 'rgba(45,27,105,0.55)';
+      rr(ctx, siX, siY, siSize, siSize, 6); ctx.fill();
+      ctx.strokeStyle = C.si3n4B; ctx.lineWidth = 1.5;
+      rr(ctx, siX, siY, siSize, siSize, 6); ctx.stroke();
+      boldLabel('Si₃N₄ chip (4 m)', siX + siSize / 2, siY - 12, C.violet, 10);
+
+      // Spiral
+      const spts = spiralPoints(siX + siSize / 2, siY + siSize / 2, 10, 72, 4.5, 360);
+      drawSpiralPath(spts, 'rgba(167,139,250,0.65)', 2);
+      const frac = (t * 0.00016) % 1;
+      photonAlongPath(spts, frac, C.violet);
+
+      // Waveguide from DFB to spiral entry
+      const wgY = dfbY + dfbH / 2;
+      ctx.strokeStyle = 'rgba(56,189,248,0.5)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(dfbX + dfbW, wgY); ctx.lineTo(siX, wgY); ctx.stroke();
+      photonsLine(dfbX + dfbW, wgY, siX, wgY, t, 0.00045, C.blue, 3, 0);
+
+      // DBR chip
+      const dbrX = siX + siSize + 12, dbrY = dfbY - 12, dbrW = 55, dbrH = 65 + 24;
+      drawDBR(dbrX, dbrY, dbrW, dbrH);
+      boldLabel('DBR', dbrX + dbrW / 2, dbrY - 16, C.green, 11);
+      label('κL = 1', dbrX + dbrW / 2, dbrY + dbrH + 14, C.muted, 9);
+
+      // Waveguide from spiral exit to DBR
+      ctx.strokeStyle = 'rgba(167,139,250,0.5)'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(siX + siSize, wgY); ctx.lineTo(dbrX, dbrY + dbrH / 2); ctx.stroke();
+      photonsLine(siX + siSize, wgY, dbrX, dbrY + dbrH / 2, t, 0.00045, C.violet, 2, 0);
+
+      // Return path (below chips)
+      const retY = dfbY + dfbH + 42;
+      ctx.strokeStyle = 'rgba(34,197,94,0.4)'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(dbrX + dbrW / 2, dbrY + dbrH);
+      ctx.lineTo(dbrX + dbrW / 2, retY);
+      ctx.lineTo(dfbX + dfbW / 2, retY);
+      ctx.lineTo(dfbX + dfbW / 2, dfbY + dfbH);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Animated return photon
+      const rPath = [
+        [dbrX + dbrW / 2, dbrY + dbrH],
+        [dbrX + dbrW / 2, retY],
+        [dfbX + dfbW / 2, retY],
+        [dfbX + dfbW / 2, dfbY + dfbH],
+      ];
+      const rFrac = ((t * 0.00018 + 0.5) % 1);
+      const rTotalLen = 3;
+      const rIdx = Math.floor(rFrac * (rPath.length - 1));
+      const rT = rFrac * (rPath.length - 1) - rIdx;
+      if (rIdx < rPath.length - 1) {
+        const rPx = rPath[rIdx][0] + rT * (rPath[rIdx + 1][0] - rPath[rIdx][0]);
+        const rPy = rPath[rIdx][1] + rT * (rPath[rIdx + 1][1] - rPath[rIdx][1]);
+        glowCircle(rPx, rPy, 3.5, C.green, 0.75);
+      }
+      label('return path (η₀ ≈ −34 dB)', (dfbX + dbrX) / 2 + 30, retY + 12, C.green, 9);
+
+      // Output arrow
+      const outX = dbrX + dbrW, outY = dbrY + dbrH / 2;
+      ctx.strokeStyle = C.blue; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(outX, outY); ctx.lineTo(outX + 70, outY); ctx.stroke();
+      ctx.fillStyle = C.blue;
+      ctx.beginPath(); ctx.moveTo(outX + 70, outY); ctx.lineTo(outX + 62, outY - 5); ctx.lineTo(outX + 62, outY + 5); ctx.closePath(); ctx.fill();
+      photonsLine(outX, outY, outX + 68, outY, t, 0.0005, C.blue, 2, 0);
+      label('Output', outX + 35, outY - 12, C.blue, 9);
+      label('0.45 Hz', outX + 35, outY + 16, C.green, 10);
+
+      // Result box (right)
+      const rbX = 566, rbY = 42, rbW = 228, rbH = 260;
+      ctx.fillStyle = 'rgba(5,46,22,0.3)';
+      rr(ctx, rbX, rbY, rbW, rbH, 6); ctx.fill();
+      ctx.strokeStyle = C.green; ctx.lineWidth = 1.5;
+      rr(ctx, rbX, rbY, rbW, rbH, 6); ctx.stroke();
+      boldLabel('System Parameters', rbX + rbW / 2, rbY + 18, C.green, 11);
+      const params = [
+        ['DFB gain chip',  'InAs/GaAs QW'],
+        ['DFB cavity',     '~300 µm'],
+        ['Si₃N₄ waveguide', '4 m spiral'],
+        ['DBR κL',         '1.0'],
+        ['Total L_eff',    '~4 m'],
+        ['Passive feedback η₀', '−34 dB'],
+        ['τ_ph (effective)', '~100× longer'],
+        ['',               ''],
+        ['Free-running Δν', '0.45 Hz (!)'],
+        ['NRF achieved',   '51.3 dB'],
+      ];
+      ctx.textAlign = 'left';
+      params.forEach(([k, v], i) => {
+        if (!k && !v) return;
+        ctx.fillStyle = C.muted;
+        ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+        ctx.fillText(k, rbX + 12, rbY + 36 + i * 22);
+        ctx.fillStyle = i >= 8 ? C.green : C.text;
+        ctx.font = (i >= 8 ? 'bold ' : '') + '9px "Segoe UI", system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(v, rbX + rbW - 12, rbY + 36 + i * 22);
+        ctx.textAlign = 'left';
+      });
+    }
+  },
+  {
+    num: 6, title: 'The Results — Sub-Hz Linewidth Achieved',
+    keyColor: '#22c55e',
+    key: 'QW DFB: 76 kHz  →  E-DBR: 12 kHz  →  4 m ECL: 0.45 Hz  ·  NRF = 51.3 dB  ·  170,000× improvement',
+    desc: 'The paper demonstrates three devices with increasing cavity integration. The bare DFB has Δν ≈ 76 kHz. Adding the on-chip E-DBR grating alone improves this to 12 kHz (NRF = 31.1 dB) by extending the photon lifetime via the feedback mechanism. The full 4-metre ECL with spiral waveguide achieves Δν = 0.45 Hz — a world-class result at the time of publication for a hybrid-integrated laser. This is 170,000× narrower than the bare DFB, enabling coherent sensing and LiDAR applications that previously required bulky, fiber-based ECLs.',
+    draw(t) {
+      ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+      boldLabel('Linewidth Comparison — Three Devices', W / 2, 26, C.green, 14);
+
+      // Bar chart area
+      const bArea = { x: 50, y: 60, w: 360, h: 200 };
+      ctx.fillStyle = 'rgba(15,23,42,0.8)';
+      rr(ctx, bArea.x, bArea.y, bArea.w, bArea.h, 6); ctx.fill();
+      ctx.strokeStyle = C.border; ctx.lineWidth = 1;
+      rr(ctx, bArea.x, bArea.y, bArea.w, bArea.h, 6); ctx.stroke();
+
+      const devices2 = [
+        { label: 'QW DFB',  dv: 76000, color: '#f87171', nrf: 0, desc: 'bare DFB' },
+        { label: 'E-DBR',   dv: 12000, color: '#fbbf24', nrf: 31.1, desc: 'on-chip DBR' },
+        { label: '4 m ECL', dv: 0.45,  color: '#4ade80', nrf: 51.3, desc: '4 m spiral' },
+      ];
+
+      const maxDv = 76000;
+      const barW = 80, barGap = 30;
+      const maxBarH = bArea.h - 60;
+      const baseY = bArea.y + bArea.h - 20;
+
+      devices2.forEach((d, i) => {
+        const bx = bArea.x + 30 + i * (barW + barGap);
+        const bh = Math.max(2, (Math.log10(d.dv) / Math.log10(maxDv)) * maxBarH);
+        const by = baseY - bh;
+
+        // Bar fill with gradient
+        const grad = ctx.createLinearGradient(bx, by, bx, baseY);
+        grad.addColorStop(0, d.color + 'ff');
+        grad.addColorStop(1, d.color + '44');
+        ctx.fillStyle = grad;
+        rr(ctx, bx, by, barW, bh, 3); ctx.fill();
+        ctx.strokeStyle = d.color; ctx.lineWidth = 1;
+        rr(ctx, bx, by, barW, bh, 3); ctx.stroke();
+
+        // Labels
+        boldLabel(d.label, bx + barW / 2, by - 14, d.color, 11);
+        const dvStr = d.dv >= 1000 ? (d.dv / 1000).toFixed(0) + ' kHz' : d.dv.toFixed(2) + ' Hz';
+        boldLabel(dvStr, bx + barW / 2, by - 3, d.color, 10);
+        label(d.desc, bx + barW / 2, baseY + 12, C.muted, 9);
+        if (d.nrf > 0) label('NRF: ' + d.nrf + ' dB', bx + barW / 2, baseY + 23, d.color, 8);
+      });
+
+      // Y-axis label
+      label('Linewidth (log scale)', bArea.x - 4, bArea.y + bArea.h / 2, C.muted, 9);
+      // Log axis ticks
+      const ticks = [[76000,'76 kHz'],[12000,'12 kHz'],[1000,'1 kHz'],[1,'1 Hz'],[0.45,'0.45 Hz']];
+      ticks.forEach(([val, lbl]) => {
+        const ty = baseY - (Math.log10(val) / Math.log10(maxDv)) * maxBarH;
+        if (ty < bArea.y + 10) return;
+        ctx.strokeStyle = 'rgba(51,65,85,0.5)'; ctx.lineWidth = 0.5;
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath(); ctx.moveTo(bArea.x + 10, ty); ctx.lineTo(bArea.x + bArea.w - 10, ty); ctx.stroke();
+        ctx.setLineDash([]);
+        label(lbl, bArea.x + 6, ty + 3, C.muted, 7, 'right');
+      });
+
+      // Improvement arrow
+      const imp = { x: bArea.x + bArea.w + 15, y: 70, w: 60, h: 190 };
+      ctx.strokeStyle = C.green; ctx.lineWidth = 2;
+      annotationArrow(imp.x + imp.w / 2, imp.y + 10, imp.x + imp.w / 2, imp.y + imp.h, C.green);
+      ctx.save(); ctx.translate(imp.x + imp.w / 2 - 12, imp.y + imp.h / 2); ctx.rotate(-Math.PI / 2);
+      boldLabel('170,000×', 0, 0, C.green, 11);
+      ctx.restore();
+      label('improvement', imp.x + imp.w / 2, imp.y + imp.h + 12, C.green, 9);
+
+      // Spectrum comparison (right)
+      const scX = 540, scY = 55;
+      drawLorentzian(scX, scY, 120, 80, 0.25, '#f87171', '', 0);
+      label('76 kHz (DFB)', scX + 60, scY - 6, '#f87171', 9);
+      drawLorentzian(scX, scY + 88, 120, 80, 0.07, '#fbbf24', '', 0);
+      label('12 kHz (E-DBR)', scX + 60, scY + 82, '#fbbf24', 9);
+      drawLorentzian(scX, scY + 175, 120, 80, 0.008, '#4ade80', '', 0);
+      label('0.45 Hz (4 m ECL!)', scX + 60, scY + 169, '#4ade80', 9);
+
+      // Big number
+      const bny = 276;
+      ctx.fillStyle = 'rgba(5,46,22,0.7)';
+      rr(ctx, 50, bny, bArea.w, 28, 4); ctx.fill();
+      ctx.fillStyle = C.green;
+      ctx.font = 'bold 13px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Δν = 0.45 Hz · NRF = 51.3 dB · Isolator-free hybrid integration on Si₃N₄', bArea.x + bArea.w / 2, bny + 18);
+    }
+  },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────
+let currentStep = 0;
+let animId = null;
+let startTime = null;
+
+// ── Build step dots ───────────────────────────────────────────────────────
+const dotsEl = document.getElementById('step-dots');
+STEPS.forEach((s, i) => {
+  const d = document.createElement('div');
+  d.className = 'dot';
+  d.title = s.title;
+  d.onclick = () => goTo(i);
+  dotsEl.appendChild(d);
+});
+
+// ── Update UI ─────────────────────────────────────────────────────────────
+function updateUI(idx) {
+  const s = STEPS[idx];
+  document.getElementById('step-num').textContent = `STEP ${idx + 1} OF ${STEPS.length}`;
+  document.getElementById('step-title').textContent = s.title;
+  document.getElementById('step-desc').textContent = s.desc;
+  const kb = document.getElementById('key-box');
+  kb.textContent = s.key;
+  kb.style.borderColor = s.keyColor;
+  kb.style.color = s.keyColor;
+  document.getElementById('step-counter').textContent = `${idx + 1} / ${STEPS.length}`;
+
+  const prev = document.getElementById('btn-prev');
+  const next = document.getElementById('btn-next');
+  prev.disabled = idx === 0;
+  next.textContent = idx === STEPS.length - 1 ? '✓ Done' : 'Next →';
+  next.classList.toggle('finish', idx === STEPS.length - 1);
+
+  document.querySelectorAll('.dot').forEach((d, i) => {
+    d.classList.toggle('active', i === idx);
+    d.classList.toggle('done', i < idx);
+  });
+}
+
+// ── Animation loop ────────────────────────────────────────────────────────
+function animate(ts) {
+  if (!startTime) startTime = ts;
+  const t = ts - startTime;
+  ctx.clearRect(0, 0, W, H);
+  STEPS[currentStep].draw(t);
+  animId = requestAnimationFrame(animate);
+}
+
+function goTo(idx) {
+  currentStep = idx;
+  startTime = null;
+  updateUI(idx);
+}
+
+document.getElementById('btn-prev').onclick = () => { if (currentStep > 0) goTo(currentStep - 1); };
+document.getElementById('btn-next').onclick = () => { if (currentStep < STEPS.length - 1) goTo(currentStep + 1); };
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    if (currentStep < STEPS.length - 1) goTo(currentStep + 1);
+  }
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    if (currentStep > 0) goTo(currentStep - 1);
+  }
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────
+updateUI(0);
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
