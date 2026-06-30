@@ -111,7 +111,7 @@
 <body>
 <div class="page">
   <h1>Building a Sub-Hz Laser: From Diode to External Cavity</h1>
-  <p class="paper-ref">Based on Dong et al., <em>Optica</em> 12(8), 1171 (2025) — steps 3–5 are interactive (drag the sliders)</p>
+  <p class="paper-ref">Based on Dong et al., <em>Optica</em> 12(8), 1171 (2025) — steps 3–5 &amp; 7 are interactive (drag the sliders)</p>
 
   <div class="step-dots" id="step-dots"></div>
 
@@ -215,6 +215,52 @@ function photonAlongPath(pts, frac, color, r) {
   const t2 = frac*(pts.length-1) - idx;
   const p = pts[idx], q = pts[idx+1];
   glowCircle(p[0]+t2*(q[0]-p[0]), p[1]+t2*(q[1]-p[1]), r || 4, color, 0.9);
+}
+
+// Wavy fiber path (coil) + return with optional phase noise
+function fiberCoilPoints(x0, y0, x1, y1, waves, amp) {
+  const pts = [];
+  const n = 80;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const x = x0 + t * (x1 - x0);
+    const y = y0 + t * (y1 - y0) + amp * Math.sin(t * waves * Math.PI * 2);
+    pts.push([x, y]);
+  }
+  return pts;
+}
+
+function drawFiberPath(pts, color, lw, dash) {
+  ctx.strokeStyle = color; ctx.lineWidth = lw || 2.5;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath();
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]));
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawMirror(x, y, h) {
+  ctx.fillStyle = 'rgba(148,163,184,0.25)';
+  ctx.fillRect(x, y, 8, h);
+  ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x+8, y); ctx.lineTo(x+8, y+h); ctx.stroke();
+  // hatch
+  ctx.strokeStyle = 'rgba(148,163,184,0.5)'; ctx.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    const my = y + (i+0.5)*h/6;
+    ctx.beginPath(); ctx.moveTo(x+2, my-4); ctx.lineTo(x+6, my+4); ctx.stroke();
+  }
+  boldLabel('BKR', x+4, y+h+18, '#94a3b8', 13);
+}
+
+function drawVOA(x, y, w, h) {
+  ctx.fillStyle = 'rgba(30,41,59,0.95)'; rr(x, y, w, h, 4); ctx.fill();
+  ctx.strokeStyle = C.orange; ctx.lineWidth = 1.8; rr(x, y, w, h, 4); ctx.stroke();
+  // attenuator symbol (angled line)
+  ctx.strokeStyle = C.orange; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x+8, y+h-8); ctx.lineTo(x+w-8, y+8); ctx.stroke();
+  boldLabel('VOA', x+w/2, y+h+16, C.orange, 12);
+  label('variable attenuator', x+w/2, y+h+30, C.faint, 10);
 }
 function arrow(x1, y1, x2, y2, color, lw, dash) {
   ctx.strokeStyle = color; ctx.lineWidth = lw || 1.5;
@@ -868,6 +914,145 @@ const STEPS = [
         {gap:6},
         ['vs fibre laser', 'on a chip', C.blue],
       ], C.green);
+    }
+  },
+
+  // ===== STEP 7 — Fiber BKR comparison (INTERACTIVE) =====
+  {
+    title: 'The Fiber BKR Alternative — and Why the Paper Goes On-Chip',
+    keyColor: '#fb923c',
+    key: '15.8 m fiber + back reflector  ·  NRF theory ~51 dB, measured ~41 dB  ·  phase noise in the fiber loop limits performance',
+    desc: 'Before building the Si₃N₄ chip, the standard way to narrow a diode laser is a fiber external cavity: light leaves the DFB, travels a long fiber delay (here 15.8 m), reflects off a back reflector (BKR), and returns. A variable optical attenuator (VOA) sets the feedback strength η₀. In theory this can reach ~51 dB NRF — same order as the on-chip DBR design (Fig. 4). But in practice the authors only measured ~41 dB NRF because the feedback phase wanders unpredictably in the fiber (temperature, vibration, bending). That phase noise caps linewidth narrowing and is not chip-integrable. Drag the slider to see theoretical vs achieved NRF, and why the on-chip delayed-DBR approach wins.',
+    interactive: true,
+    state: { eta0: -28 },
+    controlsHTML: `
+      <span class="ctrl-tag">Interactive — Fiber feedback strength η₀ (VOA setting)</span>
+      <div class="ctrl-row">
+        <label>Feedback coupling η₀</label>
+        <input type="range" id="s7-eta" min="-45" max="-12" step="0.5" value="-28">
+        <span class="ctrl-val" id="s7-eta-val">−28 dB</span>
+      </div>
+      <div class="ctrl-hint">BKR setup (Fig. 4c, green): <b>15.8 m fiber</b> + mirror + VOA. Theory peaks near <b>~51 dB NRF</b>; measured maximum <b>~41 dB</b> due to uncontrolled fiber phase. On-chip DBR achieves <b>51.3 dB</b> with stable phase.</div>`,
+    bind() {
+      const sl = document.getElementById('s7-eta');
+      const v = document.getElementById('s7-eta-val');
+      sl.oninput = () => { this.state.eta0 = parseFloat(sl.value); v.textContent = '−' + Math.abs(this.state.eta0).toFixed(0) + ' dB'; };
+    },
+    draw(t) {
+      ctx.fillStyle = C.bg; ctx.fillRect(0,0,W,H);
+      const eta0 = this.state.eta0;
+      const fiberLen = 15.8;
+      const accent = '#fb923c';
+
+      boldLabel('Fiber backreflector (BKR) locking — Fig. 4 comparison', W/2, 34, accent, 17);
+
+      // DFB
+      const dfbX = 28, dfbY = 168, dfbW = 110, dfbH = 68;
+      drawDFBChip(dfbX, dfbY, dfbW, dfbH);
+      boldLabel('DFB', dfbX+dfbW/2, dfbY-14, C.blue, 15);
+      label('same pump laser', dfbX+dfbW/2, dfbY+dfbH+20, C.muted, 12);
+
+      // Fiber outbound
+      const fx0 = dfbX + dfbW, fy = dfbY + dfbH/2;
+      const voaX = 168, voaY = fy - 22, voaW = 52, voaH = 44;
+      const mirX = 548, mirY = fy - 38, mirH = 76;
+
+      const outPts = fiberCoilPoints(fx0, fy, mirX - 14, fy, 5, 22);
+      drawFiberPath(outPts, 'rgba(251,146,60,0.55)', 3);
+      photonAlongPath(outPts, (t*0.00035)%1, accent, 4);
+
+      drawVOA(voaX, voaY, voaW, voaH);
+      label('sets η₀', voaX+voaW/2, voaY-8, C.orange, 11);
+
+      drawMirror(mirX, mirY, mirH);
+      label('back reflector', mirX+4, mirY+mirH+34, C.muted, 11);
+
+      // Return path — wavy (phase noise)
+      const phaseAmp = 10 + Math.max(0, (-eta0 - 20)) * 0.35;
+      const retPts = [];
+      const nR = 90;
+      for (let i = 0; i <= nR; i++) {
+        const tt = i / nR;
+        const x = mirX - 14 - tt * (mirX - 14 - fx0);
+        const wobble = phaseAmp * Math.sin(tt * 8*Math.PI + t*0.003);
+        retPts.push([x, fy + 28 + wobble]);
+      }
+      drawFiberPath(retPts, 'rgba(248,113,113,0.5)', 2.2, [5, 4]);
+      photonAlongPath(retPts, ((t*0.00028)+0.5)%1, C.red, 3.5);
+      label('return — phase wanders in fiber', (fx0+mirX)/2, fy+52, C.red, 13);
+
+      // fiber length label
+      ctx.fillStyle = 'rgba(251,146,60,0.12)';
+      rr(200, 108, 340, 36, 6); ctx.fill();
+      boldLabel(fiberLen + ' m optical fiber delay', 370, 132, accent, 15);
+
+      // NRF calculations (illustrative, anchored to paper)
+      let nrfTheory = Math.min(51, 18 + Math.max(0, (-eta0 - 15)) * 1.05);
+      nrfTheory = Math.max(5, nrfTheory);
+      const phasePenalty = Math.min(10, 2 + Math.max(0, nrfTheory - 35) * 0.55);
+      const nrfMeas = Math.max(8, Math.min(41, nrfTheory - phasePenalty));
+      const dvTheory = 71000 / Math.pow(10, nrfTheory/10);
+      const dvMeas = 71000 / Math.pow(10, nrfMeas/10);
+      const chipNrf = 51.3;
+      const chipDv = 0.45;
+
+      infoPanel(620, 58, 318, 200, 'NRF vs feedback η₀', [
+        ['VOA setting η₀', eta0.toFixed(0)+' dB', accent],
+        ['Theory NRF (ideal phase)', nrfTheory.toFixed(1)+' dB', C.green],
+        ['Measured NRF (fiber)', nrfMeas.toFixed(1)+' dB', C.red],
+        ['Phase penalty', '−'+phasePenalty.toFixed(1)+' dB', C.red],
+        {gap:4},
+        ['Δν (theory)', fmtHz(dvTheory), C.green],
+        ['Δν (measured)', fmtHz(dvMeas), C.red],
+        ['Paper max measured', '~41 dB', C.red],
+      ], accent);
+
+      // dual NRF curves
+      miniPlot(620, 272, 318, 118,
+        x => {
+          const nt = Math.min(51, 18 + Math.max(0, (-x - 15)) * 1.05);
+          return nt;
+        },
+        -45, -12, C.green,
+        { title:'NRF vs η₀ — theory vs fiber reality', xlabel:'weaker ← η₀ → stronger',
+          cur: eta0, curColor: accent,
+          markers:[{x:-28,color:accent,label:'you'}] });
+
+      // overlay measured cap line on mini plot — draw manually below plot
+      const px = 620, py = 272, pw = 318, ph = 118;
+      const capY = py + 14 + (ph-28) * (1 - (41-5)/(51-5));
+      ctx.strokeStyle = C.red; ctx.lineWidth = 1.8; ctx.setLineDash([6,4]);
+      ctx.beginPath(); ctx.moveTo(px+14, capY); ctx.lineTo(px+pw-14, capY); ctx.stroke();
+      ctx.setLineDash([]);
+      label('~41 dB measured cap', px+pw-16, capY-6, C.red, 10, 'right');
+
+      // comparison: BKR vs on-chip DBR
+      const cx = 28, cy = 318, cw = 570, ch = 132;
+      ctx.fillStyle = 'rgba(30,41,59,0.92)'; rr(cx, cy, cw, ch, 8); ctx.fill();
+      ctx.strokeStyle = C.border; ctx.lineWidth = 1.3; rr(cx, cy, cw, ch, 8); ctx.stroke();
+      boldLabel('Why the paper builds on-chip instead', cx+cw/2, cy+24, C.blue, 15);
+
+      // BKR column
+      const col1 = cx + 100;
+      boldLabel('Fiber BKR', col1, cy+52, accent, 14);
+      label('15.8 m fiber + mirror', col1, cy+72, C.muted, 12);
+      label('NRF ≈ '+nrfMeas.toFixed(0)+' dB (now)', col1, cy+92, C.red, 13);
+      label('phase uncontrolled', col1, cy+110, C.red, 12);
+      label('not PIC-integrable', col1, cy+128, C.faint, 12);
+
+      // vs
+      boldLabel('vs', cx+cw/2, cy+88, C.muted, 16);
+
+      // on-chip column
+      const col2 = cx + cw - 100;
+      boldLabel('On-chip DBR ECL', col2, cy+52, C.violet, 14);
+      label('4 m Si₃N₄ + DBR', col2, cy+72, C.muted, 12);
+      label('NRF = '+chipNrf+' dB', col2, cy+92, C.greenL, 13);
+      label('Δν = '+chipDv+' Hz', col2, cy+110, C.greenL, 12);
+      label('CMOS-compatible', col2, cy+128, C.green, 12);
+
+      // arrow showing gap
+      arrow(col1+60, cy+88, col2-60, cy+88, C.blue, 1.5, [4,3]);
     }
   },
 ];
